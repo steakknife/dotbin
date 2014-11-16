@@ -1,0 +1,165 @@
+#!/usr/bin/env ruby
+require 'net/http'
+require 'uri'
+require 'json'
+
+def log(*args)
+  $stderr.puts(args.join(' '))
+end
+
+def debug(*args)
+  log(args) if $DEBUG
+end
+
+def info(*args)
+  log(args)
+end
+
+def fatal(*args)
+  fail(args.join(' '))
+end
+
+class DownloadFile
+  BLOCK_SIZE = 512*1024
+
+  attr_reader :url, :filename
+
+  class Map
+    def initialize(filename)
+      @map_filename = filename + '.map'
+    end
+
+    def next
+      data.each_pair do |key, value|
+        return key unless value
+      end
+    end
+
+    def next!
+      data.each_pair do |key, value|
+        unless value
+          data[key] = true
+          return
+        end
+      end
+    end
+
+    def complete?
+      data.values.include? false
+    end
+
+  protected
+    def restore!
+      return JSON.parse(File.read(@map_filename))
+    rescue Errno::ENOENT, JSON::ParserError
+      return save!
+    end
+
+    def data
+      @data ||= restore!
+    end
+
+    def save!
+      return JSON.dump(@data ||= defaults)
+    end
+
+    def defaults
+      result = {}
+      (size/BLOCK_SIZE).times do |x|
+        result[(0 + x * BLOCK_SIZE)..(BLOCK_SIZE-1 + x*BLOCK_SIZE)] = false
+      end
+      if size % BLOCK_SIZE
+        result[BLOCK_SIZE*(size/BLOCK_SIZE)..(size-1)] = false
+      end
+      return result
+    end
+  end
+
+  def initialize(url, filename=nil)
+    url.prepend('http://') unless url =~ /^[a-zA-Z0-9]+:/
+    @url = URI.parse(url)
+    @url.path = '/' if url.path.empty? 
+    @filename = filename
+  end
+
+  def map
+    @map ||= Map.new(filename)
+  end
+
+  def complete?
+    map.complete?
+  end
+
+  def size
+    @size ||= connect(:head).content_length
+  end
+
+  def download_next
+    result = connect(:get) do |_, request|
+      request.range = map.next
+    end
+    write(result.body)
+    map.next!
+  end
+
+  def download_all
+    until complete?
+      download_next
+    end
+  end
+protected
+  def show_headers(object)
+    def capitalize_header(header_name)
+      header_name.split('-').map(&:capitalize).join('-')
+    end
+    object.each_header { |key, value|
+      debug "#{capitalize_header(key)}: #{value}"
+    }
+  end
+
+  def connect(method = :get)
+    info "#{method.upcase} #{url}"
+    http = Net::HTTP.new(url.host, url.port)
+    case url.scheme
+    when 'http'
+    when 'https'
+      http.use_ssl = true
+      http.verify_mode = OpenSSL::SSL::VERIFY_PEER
+      debug 'https initialized'
+    else
+      fatal "Unsupported URL scheme #{url.scheme}, Cannot download #{url}"
+    end
+    method_class = Net::HTTP.const_get(method.capitalize)
+    request = method_class.new(url.request_uri)
+    if block_given?
+      result = yield(http, request)
+      return result if result
+    end
+    debug "-- Request headers --"
+    show_headers(request)
+    debug "-- Request headers --"
+    response = http.request(request)
+    debug "HTTP version: #{response.http_version}"
+    debug "Response code: #{response.code} message: #{response.message}"
+    debug "Body size: #{response.body.size} byte(s)"
+    result = [response.content_type]
+    response.type_params.each_pair { |k,v|
+      result << "#{k}=#{v}"
+    }
+    result.join('; ')
+    debug "Content-Type: #{result}"
+    debug "-- Response headers --"
+    show_headers(response)
+    debug "-- Response headers --"
+    return response
+  end
+end
+
+
+  
+
+return unless  __FILE__ == $0
+
+ARGV.each do |x|
+  DownloadFile.new(x).download_all
+end

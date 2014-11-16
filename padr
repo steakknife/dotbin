@@ -1,0 +1,112 @@
+#!/usr/bin/env bash
+set -x
+set -e
+
+commit() {
+    git add -A
+    git commit -m "$*"
+}
+
+commit_after_run() {
+    "$@"
+    commit "$@"
+}
+
+proj="${1}"
+app="${2:-home}"
+[ -n "$3" ] && shift
+[ -n "$2" ] && shift
+
+padrino g project $proj -n $app \
+  -d activerecord -a postgres \
+  -t rspec -t shoulda -m mocha \
+  -s jquery -e haml -c sass "$@"
+
+cd "$1"
+git init
+commit "initial commit: padrino g new project $proj -n $app -d activerecord -a postgres -t rspec -t shoulda -m mocha -s jquery -e haml -c sass"
+
+commit_after_run bundle package --all
+
+commit_after_run sh -c 'bundle --binstubs vendor/bundle/bin --path vendor/bundle --local && echo -e "\n/vendor/bundle" >> .gitignore'
+
+psql -h localhost -c "drop database ${proj}_development" || true
+psql -h localhost -c "create database ${proj}_development"
+psql -h localhost -c "drop database ${proj}_test" || true
+psql -h localhost -c "create database ${proj}_test"
+
+patch -Np1 << EOF
+--- a/config/database.rb
++++ b/config/database.rb
+@@ -1,46 +1,31 @@
+-##
+-# You can use other adapters like:
+-#
+-#   ActiveRecord::Base.configurations[:development] = {
+-#     :adapter   => 'mysql2',
+-#     :encoding  => 'utf8',
+-#     :reconnect => true,
+-#     :database  => 'your_database',
+-#     :pool      => 5,
+-#     :username  => 'root',
+-#     :password  => '',
+-#     :host      => 'localhost',
+-#     :socket    => '/tmp/mysql.sock'
+-#   }
+-#
+ ActiveRecord::Base.configurations[:development] = {
+   :adapter   => 'postgresql',
++  :encoding  => 'utf8',
+   :database  => '${proj}_development',
+-  :username  => 'root',
+-  :password  => '',
+   :host      => 'localhost',
+   :port      => 5432
+
+ }
+
+-ActiveRecord::Base.configurations[:production] = {
++ActiveRecord::Base.configurations[:test] = {
+   :adapter   => 'postgresql',
+-  :database  => '${proj}_production',
+-  :username  => 'root',
+-  :password  => '',
++  :encoding  => 'utf8',
++  :database  => '${proj}_test',
+   :host      => 'localhost',
+   :port      => 5432
+
+ }
+
+-ActiveRecord::Base.configurations[:test] = {
+-  :adapter   => 'postgresql',
+-  :database  => '${proj}_test',
+-  :username  => 'root',
+-  :password  => '',
+-  :host      => 'localhost',
+-  :port      => 5432
++database_url = URI.parse(ENV['DATABASE_URL'] || '')
+
++ActiveRecord::Base.configurations[:production] = {
++  :adapter  => database_url.scheme,
++  :encoding => 'utf8',
++  :database => database_url.path[1..-1],
++  :username => database_url.user,
++  :password => database_url.password,
++  :host     => database_url.host,
++  :port     => database_url.port || 5432
+ }
+
+ # Setup our logger
+EOF
+commit 'DATABASE_URL patch for heroku'
+
+commit_after_run sh -c 'mkdir db && touch db/.gitkeep'
+commit_after_run padrino rake db:migrate 
+commit_after_run padrino g admin
+commit_after_run bundle
+commit_after_run padrino rake db:migrate 
+
+commit_after_run sh -c 'mv config.ru config.ru.bak && awk "NR==3{print \"$stdout.sync = true # logging patch for heroku\"};1" config.ru.bak > config.ru && rm config.ru.bak'
+
+cd ..

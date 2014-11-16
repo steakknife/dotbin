@@ -1,0 +1,11 @@
+#!/bin/sh
+\ssh "${@}" 2>&1 | tee /tmp/sshf.$$ >&2
+if grep 'known_hosts:[1-9]' /tmp/sshf.$$ >/dev/null
+then
+  cat /tmp/sshf.$$ | ~/bin/sf
+  rm -f  /tmp/sshf.$$
+  echo "Retrying"
+  \ssh "${@}" 
+else
+  rm -f  /tmp/sshf.$$
+fi

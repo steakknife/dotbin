@@ -1,0 +1,6 @@
+#!/bin/sh
+while true; do
+  clear
+  go build | head && gobench
+  sleep 3
+done

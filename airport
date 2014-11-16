@@ -1,0 +1,2 @@
+#!/bin/sh
+exec /System/Library/PrivateFrameworks/Apple80211.framework/Resources/airport "$@"

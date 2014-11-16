@@ -1,0 +1,10 @@
+#!/bin/sh -ex
+
+opengpg2openssh() {
+  tee /dev/stderr
+}
+
+GPGSSH_SEC_LINE="$(gpg --list-secret-keys --with-colon | grep -m1 ^sec)"
+GPGSSH_KEYID="$(echo $GPGSSH_SEC_LINE | cut -d: -f5)"
+GPGSSH_USER_AND_EMAIL="$(echo $GPGSSH_SEC_LINE | cut -d: -f10)"
+gpg --export-secret-subkeys --export-options 'export-reset-subkey-passwd,export-minimal' --armor $GPGSSH_KEYID # | opengpg2openssh | ssh-add -T "$GPGSSH_USER_AND_EMAIL" -t $GPGSSH_AUTH_TIMEOUT /dev/stdin

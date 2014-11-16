@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -e
+if [ ! -e US_export_policy.jar ]; then
+  echo 'US_export_policy.jar missing' >&2; exit 1
+fi
+if [ ! -e local_policy.jar ]; then
+  echo 'local_policy.jar missing' >&2; exit 1
+fi
+find /Library/Java/JavaVirtualMachines -type d -depth 1 | while read -r JDK_HOME; do
+  VERSION="$(echo "$JDK_HOME" | grep -o '[^/]*jdk[^/]*' | grep -o '1\.[[:digit:]]' | sed 's/1\.//')"
+  if [ "$VERSION" = "$1" ]; then
+    SECURITY_DIR="$JDK_HOME/Contents/Home/jre/lib/security"
+
+    POLICY0="$SECURITY_DIR/US_export_policy.jar"
+    POLICY0_BACKUP="$POLICY0.export"
+
+    POLICY1="$SECURITY_DIR/local_policy.jar"
+    POLICY1_BACKUP="$POLICY1.export"
+    
+    if [ ! -e "$POLICY0_BACKUP" ]; then
+      cp "$POLICY0" "$POLICY0_BACKUP"
+    fi
+    cp US_export_policy.jar "$POLICY0"
+
+    if [ ! -e "$POLICY1_BACKUP" ]; then
+      cp "$POLICY1" "$POLICY1_BACKUP"
+    fi
+    cp local_policy.jar "$POLICY1"
+
+    echo "Installed to $JDK_HOME"
+  fi
+done | grep -q 'Installed' && exit 0
+
+echo 'Bad or missing JDK version (first argument)' >&2
+exit 1

@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Usage: pint hostname
+# PINg uTc, leave running to determine when a host was down. 
+
+ping_opts='W'
+
+case "`uname -s`" in
+    Darwin) ping_opts='t' ;; # -t (seconds) timeout for mac/bsd
+    Linux)  ping_opts='W' ;; # -W (seconds) timeout for linux 
+    *) do_error "pint() Unsupported system" ;;
+esac
+
+while true; do
+    echo -n "`date -u '+%FT%TZ'` ping $1   "
+    ping -c1 -${ping_opts}1 $1 | grep --color=never '_[rs]eq' || echo
+    sleep 1
+done

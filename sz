@@ -1,0 +1,2 @@
+#!/bin/sh
+echo "$(find -- "$@" | wc -l) file(s), $(du -sh "$@")"

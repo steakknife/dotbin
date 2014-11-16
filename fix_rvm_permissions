@@ -1,0 +1,7 @@
+#!/usr/bin/env sh
+
+find ~/.rvm -type d -print0 | xargs -0L1 chmod 0755
+
+find ~/.rvm -type f -print0 | xargs -0L1 chmod 0644
+
+find ~/.rvm -type f -print0 | xargs -0L1 file | grep ' exec' | cut -d: -f1 | tee /dev/stderr | xargs -L1 chmod +x 

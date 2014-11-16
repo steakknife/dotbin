@@ -1,0 +1,182 @@
+#!/usr/bin/env ruby
+#
+# downloads all Apple OS X sources to seperate directories
+# 
+# usage: apple_osx_oss_package_downloader [options | package*]
+# 
+#      --list | -l   list osx versions instead of downloading packages
+#
+#      package*  only download sources for package
+#  
+#
+# SECURITY NOTICE: downloads are INSECURE and UNTRUSTWORTHY because Apple's SSL cert doesn't seem to work with ruby
+#
+# copyright (c) 2014 Barry Allard
+#
+# license: MIT
+#
+
+TOP_DIR = 'appleoss' # files will be downloaded here
+
+require 'fileutils'
+require 'open-uri'
+require 'openssl'
+require 'time'
+
+Signal.trap('INT') {
+   $stderr.puts "\n\n  ! User aborted\n"
+   exit 1
+}
+
+module AppleOSS
+  ENDPOINT = 'https://opensource.apple.com/tarballs/'
+
+  START_LINE = /<table>/
+  END_LINE = /<\/table>/
+
+  DIR_REGEX = /<a href="([^"]+)">([^\/]*)\/<\/a>/
+  PACKAGE_TARBALL_REGEX = /<td valign="top"><a href="([^"\/]+)">.*<\/a><\/td>/
+
+  def self.index_uncached
+    $stderr.puts "Fetching #{ENDPOINT}"
+    open(ENDPOINT).read
+  end
+
+  def self.index
+    @index ||= self.index_uncached
+  end
+
+  def self.index_urls_html
+    started, stopped = false, false
+    self.index.split("\n").map { |line|
+      next if stopped
+      if started
+        if line =~ END_LINE
+          stopped = true
+          next
+        end
+        line
+      else
+        started = true if line =~ START_LINE
+      end 
+    }.compact.join("\n")
+  end
+
+  def self.packages
+    self.relative_package_dir_urls.keys
+  end
+    
+  def self.relative_package_dir_urls
+    Hash[self.index_urls_html.scan(DIR_REGEX).map { |dir, package| [package, dir] }]
+  end
+
+  def self.absolute_package_dir_urls
+    Hash[self.relative_package_dir_urls.map { |package, relative_url|
+      [package, URI.join(ENDPOINT, relative_url).to_s]
+    }]
+  end
+
+  def self.package_index_for_package_uncached(package)
+    url = self.absolute_package_dir_urls[package]
+    $stderr.puts "Fetching #{url}"
+    open(url).read
+  end
+
+  def self.package_index_for_package(package)
+    (@package_indicies ||= {})[package] ||= self.package_index_for_package_uncached(package)
+  end
+
+  def self.relative_tarball_urls_for_package(package)
+    (@relative_tarball_urls_for_package ||= {})[package] ||= self.package_index_for_package(package).scan(PACKAGE_TARBALL_REGEX).flatten
+  end
+
+  def self.tarball_filenames_for_package(package)
+    (@tarball_filenames_for_version ||= {})[package] ||= self.relative_tarball_urls_for_package(package).map { |uri| File.basename(uri) } 
+  end
+
+  def self.absolute_tarball_urls_for_package(package)
+    (@absolute_tarball_urls_for_package ||= {})[package] ||= self.relative_tarball_urls_for_package(package).map { |relative_url|
+      URI.join(ENDPOINT, self.relative_package_dir_urls[package], relative_url).to_s
+    }
+  end
+
+  def self.check_file(fn)
+    Zlib::GzipReader.open(fn).read rescue false
+  end
+
+  ERASE = "\b" * 12
+
+  def self.download_tarball(uri, fn)
+    size = nil
+    needs_erase = false
+    content_length_proc = proc { |content_length|
+      size = content_length
+      $stderr.puts "  | Downloading #{size} byte(s) from #{uri}"
+    }
+    progress_proc = proc { |bytes_read_so_far| 
+      $stderr.print ERASE + "    %.2f %" % percent = 100.0 * bytes_read_so_far / size 
+      needs_erase = true
+    }
+    options = {
+         content_length_proc: content_length_proc,
+               progress_proc: progress_proc
+    }
+    options['If-Modified-Since'] = File.stat(fn).mtime.httpdate if File.exists? fn
+    tries = 3
+    begin
+      open(uri, options) { |r| File.open(fn, 'wb') { |w| w.write(r.read) } }
+      raise OpenURI::HTTPError.new "Bad download" unless self.check_file fn
+    rescue OpenURI::HTTPError => e
+      if needs_erase
+        $stderr.print ERASE 
+        needs_erase = false
+      end
+      if e.io.status[0].to_i == 304 && self.check_file(fn)
+        $stderr.puts "  | Already downloaded #{uri}"
+        return
+      end
+      options.delete 'If-Modified-Since'
+      $stderr.puts "  | Retrying #{uri}"
+      retry if (tries -= 1) >= 0
+      raise
+    end
+    if needs_erase
+      $stderr.print ERASE 
+      needs_erase = false
+    end
+  end
+
+  def self.download(package)
+    $stderr.puts "Downloading source tarballs for package #{package}"
+
+    tarball_urls = self.absolute_tarball_urls_for_package(package)
+    filenames = self.tarball_filenames_for_package(package)
+    FileUtils.mkdir_p(TOP_DIR)
+    Dir.chdir(TOP_DIR) do
+      FileUtils.mkdir_p(package)
+      Dir.chdir(package) do
+        tarball_urls.zip(filenames).each { |uri, fn| self.download_tarball(uri, fn) }
+      end
+    end
+  end
+
+  def self.download_all
+    self.packages.each { |package| self.download(package) }
+  end
+end
+
+if ARGV.empty?
+  AppleOSS.download_all
+else
+  if ARGV.delete('-l') || ARGV.delete('--list')
+    puts AppleOSS.packages
+    exit
+  end
+  # check input
+  ARGV.map { |package| 
+    unless AppleOSS.packages.include? package
+      fail "Unknown package #{package}" 
+    end
+  }
+  ARGV.map { |package| AppleOSS.download(package) }
+end

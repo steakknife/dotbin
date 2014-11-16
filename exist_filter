@@ -1,0 +1,6 @@
+#!/bin/sh
+set -e
+while read -r file_name
+do
+  test -e "$file_name" && echo $file_name
+done

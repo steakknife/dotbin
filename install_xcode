@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -e
+set -x
+
+die() {
+  echo "$@" >&2
+  exit 1
+}
+
+case `osx_version` in
+10.[78].*) path=xcode_4.5.2
+           file=xcode4520418508a.dmg
+           size=
+           sha1=
+           ;;
+*) die "Unsupported mac version `osx_version`"
+esac
+
+TMP_DMG="`tmpfile`"
+
+trap 'rm -f "$TMP_DMG"' EXIT TERM QUIT ERR INT
+
+apple_download "http://adcdownload.apple.com/Developer_Tools/$path/$file" "$TMP_DMG" $size $sha1
+
+install_dmg "$TMP_DMG"

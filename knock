@@ -1,0 +1,2 @@
+#!/bin/sh
+exec fwknop --verbose -n freebsd-aws

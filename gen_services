@@ -1,0 +1,44 @@
+#!/bin/sh
+set -e
+
+HEADER=59
+FOOTER=6
+
+ASSIGNED_NUMBER_LINES=15892
+
+PROTOCOL_START_LINE=15893
+PROTOCOL_END_LINE=17275
+
+PEOPLE_START_LINE=17282
+PEOPLE_END_LINE=22270
+
+test -e service-names-port-numbers.txt || curl -LO https://www.iana.org/assignments/service-names-port-numbers/service-names-port-numbers.txt
+
+tail -n +$HEADER service-names-port-numbers.txt > service-names-port-numbers.work
+MIDDLE_LINES="$(wc -l < service-names-port-numbers.work)"
+head -n "$(( $MIDDLE_LINES - $FOOTER ))" service-names-port-numbers.work > service-names-port-numbers.fixed
+rm -f service-names-port-numbers.work
+
+head -n +$ASSIGNED_NUMBER_LINES service-names-port-numbers.fixed > numbers-list.txt
+
+tail -n +$PROTOCOL_START_LINE service-names-port-numbers.fixed | head -n "$(($PROTOCOL_END_LINE - $PROTOCOL_START_LINE + 1))" >  protocols-list.txt
+
+tail -n +$PEOPLE_START_LINE service-names-port-numbers.fixed > people-list.txt
+
+rm -f service-names-port-numbers.fixed
+
+# protocols-list.txt
+#  name port   proto
+# 1..20 21..25 31..35
+while read -r LINE; do
+  NAME="$(echo "$LINE" | cut -c1-20)"
+  PORT="$(echo "$LINE" | cut -c21-25)"
+  PROTO="$(echo "$LINE" | cut -c31-35)"
+  COMMENT="$(echo "$LINE" | cut -c39-)"
+  test -n "$NAME" && echo "N=$NAME P=$PORT/p=$PROTO  # $COMMENT"
+done < numbers-list.txt
+
+
+
+# people-list.txt
+# protocols-list.txt

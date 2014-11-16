@@ -1,0 +1,5 @@
+#!/bin/sh -e
+pkgutil --expand "$2.pkg" "$TMPDIR/$1/$2"
+cd "$TMPDIR/$1/$2"
+tar xf Payload
+pwd

@@ -1,0 +1,40 @@
+#!/bin/sh
+# brew install curl --with-rtmp --with-ssh --with-openssl --with-libmetalink --with-gssapi --with-ares
+set -e
+if [ "$1" = '-d' ]; then
+  set -x
+  OPTIONS=""
+else
+  OPTIONS="-s"
+fi
+if [ -e /Users/bmf/.force_dnscrypt_on ] && [ ! -e /Users/bmf/.force_dnscrypt_off ]; then
+  exit 0
+fi
+
+WEBSITE="${WEBSITE-www.thinkdifferent.us}"
+DNS_SERVER="${DNS_SERVER-8.8.8.8}"
+
+dns_only() {
+  RECORDS="$(dig @$DNS_SERVER +noquestion +noadditional +noauthority +time=2 +tries=2 $WEBSITE any 2>/dev/null | sed '/^;/d;/^$/d' | grep -c .)"
+  [[ "$RECORDS" -gt 0 ]]
+}
+
+web() {
+  STRING="${STRING-<HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Success</BODY></HTML>}"
+  if dns_only; then
+    /usr/local/opt/curl/bin/curl \
+      --ipv4 \
+      --user-agent "Mozilla/5.0 (compatible; MSIE 10.0; Windows NT 6.1; Trident/6.0)" \
+      $OPTIONS \
+      --location \
+      --retry 2 \
+      --dns-servers $DNS_SERVER \
+      --retry-max-time 3 \
+      --max-time 12 \
+      $WEBSITE | dd bs=512 count=1 2>/dev/null | grep -q "$STRING"
+  else
+    return 1
+  fi
+}
+
+web

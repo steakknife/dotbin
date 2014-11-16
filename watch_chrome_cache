@@ -1,0 +1,11 @@
+#!/bin/sh
+TDIR="$(mktemp -d -t XXXXXXXX)"
+trap 'result=$?; rm -rf "$TDIR"; exit $result' INT QUIT TERM EXIT ERR HUP PIPE
+cd "$TDIR"
+while true; do
+  clear
+  cp dir.txt dir.old 2>/dev/null || true
+  ls -laSrR /Users/bmf/Library/Caches/Google/Chrome/Default > dir.txt
+  diff -u dir.old dir.txt | head
+  sleep 10
+done

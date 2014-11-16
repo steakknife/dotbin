@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -ex
+
+echo "Uninstalling Mono OSX" >&2
+
+sudo rm -rf /Library/Frameworks/Mono.framework
+
+sudo rm -r /Library/Receipts/MonoFramework-* || true
+
+for dir in /usr/bin /usr/share/man/man1 /usr/share/man/man3 /usr/share/man/man5; do
+   (cd ${dir};
+    for i in `ls -al | grep /Library/Frameworks/Mono.framework/ | awk '{print $9}'`; do
+      sudo rm -f "${i}"
+    done);
+done

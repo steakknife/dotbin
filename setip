@@ -1,0 +1,12 @@
+#!/bin/sh
+set -x
+set -e
+iface=en1
+
+original_ip=`ifconfig en1 inet | awk '/inet/{print$2}'`
+
+new_octect="$1"
+  
+new_ip=`echo $original_ip | sed 's/\.[0-9]*$//' | tr '\n' '\0' ; echo .$new_octect`
+
+sudo ifconfig $iface $new_ip

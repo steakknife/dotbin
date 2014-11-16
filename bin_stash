@@ -1,0 +1,28 @@
+#!/bin/sh
+# Usage : bin_stash {on|off} program
+
+
+case "${1}" in
+  on)  src="/usr/bin/${2}"
+      dest="/usr/bin/${2}.osx"
+      if [ -x "${src}" ] && [ ! -x "${dest}" ]
+      then
+        sudo \mv "${src}" "${dest}"
+      else
+        echo "problem" >&@
+        exit 1
+      fi
+      ;;
+  off)  src="/usr/bin/${2}.osx"
+      dest="/usr/bin/${2}"
+      if [ -x "${src}" ]&& [ ! -x "${dest}" ]
+      then
+        sudo \mv "${src}" "${dest}"
+      else
+        echo "problem" >&@
+        exit 1
+      fi
+      ;;
+   *) sed "s/# //" "${0}" | grep Usage | grep -v grep
+      ;;
+esac

@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+set -e
+#set -x
+GITHUB_USERNAME="${GITHUB_USERNAME-steakknife}"
+#config
+X=(a b c)
+X+='z'
+X+='y'
+echo "${X[@]}"
+GIT_ALL_ARGS=( )
+GIT_NON_ARGS=( )
+GIT_ARGS=( )
+GIT_ALL_ARGS+="ABCD"
+GIT_ALL_ARGS+="ZZZZZZ"
+for X in "${GIT_ALL_ARGS[@]}"; do
+  echo "ABCD after: GIT_ALL_ARGS=$X"
+done
+while [ "$#" != 0 ]; do
+  for X in "${GIT_ALL_ARGS[@]}"; do
+    echo "$1 before: GIT_ALL_ARGS=$X"
+  done
+  for X in "${GIT_ARGS[@]}"; do
+    echo "$1 before: GIT_ARGS=$X"
+  done
+  for X in "${GIT_NON_ARGS[@]}"; do
+    echo "$1 before: GIT_NON_ARGS=$X"
+  done
+  case "$1" in
+    clone) GITHUB_CLONE=1 ;;
+    remote) GITHUB_REMOTE=1 ;;
+    fork) GITHUB_FORK=1 ;;
+    add) GITHUB_ADD=1 ;;
+    -*) GIT_ALL_ARGS+=$1
+        GIT_ARGS+=$1
+        echo "arg $1"
+        ;;
+    *) GIT_ALL_ARGS+=$1
+      GIT_NON_ARGS+=$1
+      echo "non arg $1";;
+  esac
+  for X in "${GIT_ALL_ARGS[@]}"; do
+    echo "$1 after: GIT_ALL_ARGS=$X"
+  done
+  for X in "${GIT_ARGS[@]}"; do
+    echo "$1 after: GIT_ARGS=$X"
+  done
+  for X in "${GIT_NON_ARGS[@]}"; do
+    echo "$1 after: GIT_NON_ARGS=$X"
+  done
+  shift
+done
+for X in "${GIT_ALL_ARGS[@]}"; do
+  echo "$1: GIT_ALL_ARGS=$X"
+done
+for X in "${GIT_ARGS[@]}"; do
+  echo "$1: GIT_ARGS=$X"
+done
+for X in "${GIT_NON_ARGS[@]}"; do
+  echo "$1: GIT_NON_ARGS=$X"
+done
+
+if [ -n "$GITHUB_CLONE" ]; then
+  REPO="${GIT_NON_ARGS[0]}"
+  if [[ "$REPO" =~ ^my/ ]]; then
+    REPO="$(echo "$REPO" | sed "s/my/$GITHUB_USERNAME/")"
+  elif [[ "$REPO" =~ ^\./ ]]; then
+    REPO="$(echo "$REPO" | sed "s/\./$GITHUB_USERNAME/")"
+  fi
+  if [[ "$REPO" =~ / ]] && ! [[ "$REPO" =~ ^$GITHUB_USERNAME/ ]]; then
+    GIT_URL="https://github.com/$REPO"
+  else 
+    GIT_URL="git@github.com:$REPO"
+  fi
+  INDEX=0
+  while [ "${GIT_ALL_ARGS[$INDEX]}" != "${GIT_NON_ARGS[0]}" ]; do
+    INDEX=$((INDEX+1))
+  done
+  declare -a TEMP_ALL_ARGS TEMP_NON_ARGS
+  # shift NON_ARGS
+  #GIT_NON_ARGS=( "${GIT_NON_ARGS[@]:1}" )
+  # GIT_ALL_ARGS  0... INDEX-1  (remove INDEX) INDEX+1 .... 
+  GIT_ALL_ARGS=( "${GIT_ALL_ARGS[@]::$INDEX}" "${GIT_ALL_ARGS[@]:$((INDEX+1))}" )
+  
+  exec git clone "$GIT_URL" "${GIT_ALL_ARGS[@]}"
+elif [ -n "$GITHUB_FORK" ]; then
+  echo todo
+  exit 1
+elif [ -n "$GITHUB_ADD" ]; then
+  echo todo
+  exit 1
+else
+  exec git "$GIT_ALL_ARGS"
+fi

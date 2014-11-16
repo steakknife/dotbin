@@ -1,0 +1,3 @@
+#!/bin/sh
+set -x
+su administrator -c "sudo sh -c '$*'"

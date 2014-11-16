@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+exec vmrun start "$HOME/Documents/Virtual Machines.localized/Builder (Ubuntu LTS 12.04.x).vmwarevm/Builder (Ubuntu LTS 12.04.x).vmx" &

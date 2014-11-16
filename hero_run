@@ -1,0 +1,2 @@
+#!/bin/sh
+exec heroku run bash --app garrett -- bash -c "'$@'"

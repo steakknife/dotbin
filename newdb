@@ -1,0 +1,3 @@
+#!/bin/sh
+psql -h localhost -c "DROP DATABASE $1"
+psql -h localhost -c "CREATE DATABASE $1"

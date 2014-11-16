@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+set -e
+set -x
+
+die() {
+  echo "$@" >&2
+  exit 1
+}
+
+
+case `osx_version` in
+10.7.*) path=command_line_tools_os_x_lion_for_xcode__january_2013
+        file=xcode46cltools_10_76938132a.dmg
+        size=146394832
+        sha1=da642cb7ff17cf63e43a60dc9f3e83c5d7cd4d4e
+        ;;
+10.8.*) path=command_line_tools_os_x_mountain_lion_for_xcode__january_2013
+        file=xcode46cltools_10_86938131a.dmg
+        size=118394139
+        sha1=a550a1e642a7778172f05ec596f3f88a2b38a9de
+        ;;
+*) die "Unsupported mac version `osx_version`"
+esac
+
+TMP_FILE="`mktemp`"
+
+trap 'rm -f "$TMP_FILE"' EXIT TERM QUIT ERR INT
+
+apple_download "http://adcdownload.apple.com/Developer_Tools/$path/$file" "$TMP_FILE" $size $sha1
+
+install_dmg "$TMP_FILE"

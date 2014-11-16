@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -e
+set -x
+
+source ~/.itunes_music_library
+
+sed_escape() {
+  echo "$1" | sed 's/\\/\\\\/g;s/%/\\%/g'
+}
+
+music_filter() {
+  egrep -i '\.(mp3|mp4|flac)$'
+}
+
+find "$FROM" | music_filter | sed "s/\\.[^.]*$//;s%^$(sed_escape "$FROM")%%" > from.txt
+
+find "$TO" | music_filter | sed "s/\\.[^.]*$//;s%^$(sed_escape "$TO")%%" > to.txt
+
+diff -u from.txt to.txt
+
+rm -f from.txt to.txt

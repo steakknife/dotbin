@@ -1,0 +1,3 @@
+#!/usr/bin/env bash --posix
+
+find . -type f -name "${3}" -print0 | xargs -0 -I% replace "${1}" "${2}" %

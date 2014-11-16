@@ -1,0 +1,49 @@
+#!/bin/sh
+
+set -e
+
+# Special tricks studo knows
+#
+# STUDO_GIVE_ME_A_MOTHERFUCKING_LOGIN_SHELL_MOTHERFUCKER      studo ignores you, you don't exist.
+# STUDO_SAYS_FUCK_OFF                                         studoing fail immediately.
+# STUDO_HIDE_MY_FBI_FILES                                     this will not show failed attempts of non-studioing 
+# STUDO_ALWAYS_MOONWALKS_AND_WEARS_SUNGLASSES_EVEN_AT_NIGHT   skip the loser command attempt, always ride first class and free airport lounge massages
+# STUDO_STAYS_NO_SOUP_FOR_YOU                                 prevent all studoing 
+
+test -n "${STUDO_SAYS_FUCK_OFF}" 
+
+command="${1}" ; shift 
+
+export STUDO_GIVE_ME_A_MOTHERFUCKING_LOGIN_SHELL_MOTHERFUCKER 
+export STUDO_HIDE_MY_FBI_FILES
+export STUDO_ALWAYS_MOONWALKS_AND_WEARS_SUNGLASSES_EVEN_AT_NIGHT
+export STUDO_STAYS_NO_SOUP_FOR_YOU
+
+if [ -n "${STUDO_HIDE_MY_FBI_FILES}" ]
+then
+  trap 'rm -f ${your_fbi_files} ; exit 1' ERR INT QUIT TERM
+  your_fbi_files="`mktemp -m 0600`"
+else
+  your_fbi_files=/dev/stdout
+fi
+
+if ! "${command}" "${@}" >"${your_fbi_files}" 2>&1
+then
+  test -n "${STUDO_SAYS_NO_SOUP_FOR_YOU}" 
+  if [ -x "`which sudo`" ]
+    [ -n "${STUDO_GIVE_ME_A_MOTHERFUCKING_LOGIN_SHELL_MOTHERFUCKER}" ] && sudo_args=-H
+    sudo ${sudo_args} -- "${command}" "${@}"
+  elsif [ -x "`which su`" ]
+    [ -n "${STUDO_GIVE_ME_A_MOTHERFUCKING_LOGIN_SHELL_MOTHERFUCKER}" ] && su_args=-
+    su ${su_args} root -c "\"${command}\" \"${@}\""
+  else
+    cat "${your_fbi_files}" >&2
+    false
+  fi
+else
+  cat "${your_fbi_files}"
+  \rm "${your_fbi_files}"
+fi
+
+trap - ERR INT QUIT TERM
+

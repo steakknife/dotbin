@@ -1,0 +1,54 @@
+#!/bin/sh
+set -e
+
+cmd() {
+  SVC="$1"
+  test -n "$2" && shift
+  launchctl "$@" -w ~/Library/LaunchAgents/homebrew.mxcl.$SVC.plist
+}
+
+service_list() {
+  ls ~/Library/LaunchAgents/homebrew.mxcl.*.plist | sed 's/.*homebrew\.mxcl\.//g;s/\.plist$//g'
+}
+
+list() {
+  for LIST_SVC in `service_list`; do
+    status $LIST_SVC
+  done
+} 
+
+status() {
+  if launchctl list | grep -q "homebrew\\.mxcl\\.$1$"; then
+    echo "$1 is started" >&2
+    return 0
+  else
+    echo "$1 is stopped" >&2
+    return 1
+  fi
+} 
+
+usage() {
+  cat << USAGE
+  
+usage: $0 {service_name {status|start|stop|restart|disable|reenable}}|list
+
+   list only lists started services
+
+USAGE
+}
+
+case "$2" in
+enable) cmd "$1" load -w ;;
+disable) cmd "$1" unload -w ;;
+start) cmd "$1" load ;;
+stop) cmd "$1" unload ;;
+status) status "$1" ;;
+restart) cmd "$1" unload 2>/dev/null; cmd "$1" load ;;
+reenable) cmd "$1" unload 2>/dev/null; cmd "$1" load -w ;;
+*) 
+  case "$1" in
+  list) list ;;
+  *) usage ;;
+  esac
+esac
+

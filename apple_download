@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+set -e
+set -x
+
+# $1 filename
+# $2 size in bytes
+# $3 sha1
+apple_download_ok() {
+  local file_size="`wc -c \"${1}\" 2>/dev/null | awk '{print$1}'`"
+  test x"${file_size}" = x"${2}" && shasum "$1" | grep -qs "$3"
+}
+
+die() {
+  echo "$@" >&2
+  exit 1
+}
+
+do_apple_download() {
+  local url="${1}"
+  local f="${2}"
+  local size="${3}"
+  local sha="${4}"
+  local user_agent="Mozilla/5.0 (Macintosh; U; Intel Mac OS X 10.5; en-US; rv:1.9.1) Gecko/20090624 Firefox/3.5"
+
+
+  if apple_download_ok "${f}" "${size}" "${sha}"
+  then
+    echo "${f}"
+    return 0
+  fi
+
+  if [[ `df -k ~ | awk '/dev/{print$2}'` -lt $((${size}/1024)) ]]
+  then
+    die "Cannot download ${f}, out of disk space" 
+  fi
+
+  test -e "${f}" && rm -f "${f}"
+
+  # check for apple login details.
+  if ! grep -qs 'machine.*adcdownload.apple.com' ~/.netrc
+  then
+    cat << 'EOF'
+  Add the following entry to ~/.netrc:
+
+    machine adcdownload.apple.com
+            login your_apple_developer_email
+            password your_apple_developer_password
+EOF
+    exit 1
+  fi
+
+  local apple_id="`grep 'machine.*adcdownload.apple.com' -A2 ~/.netrc | awk '/login/{print$2}'`"
+  local apple_passwd="`grep 'machine.*adcdownload.apple.com' -A2 ~/.netrc | awk '/password/{print$2}'`"
+  local cookies="`mktemp`"
+  local login_page="`mktemp`"
+
+  curl -sL --cookie-jar $cookies --cookie $cookies\
+     -A "${user_agent}" \
+     https://developer.apple.com/devcenter/ios/login.action \
+     -o $login_page
+
+  local login_url="`awk -F'"' '/<form/{print$6}' $login_page`"
+  local wosid="`awk -F'"' '/"wosid"/{print$6}' $login_page`"
+
+  rm -f $login_page
+
+  curl -sL --cookie-jar $cookies --cookie $cookies \
+     -A "${user_agent}" \
+     -e ';auto' \
+     "https://daw.apple.com${login_url}?theAccountName=${apple_id}&theAccountPW=${apple_passwd}&1.Continue.x=0&1.Continue.y=0&theAuxValue&wosid=${woid}" \
+     >/dev/null
+
+  trap 'RESULT=$?; rm -f "${f}" "${cookies}" "${login_page}" 2>/dev/null ; exit $RESULT' EXIT INT ERR TERM
+
+  curl -L --cookie-jar $cookies --cookie $cookies \
+     -A "${user_agent}" \
+     "$url" \
+     -o "${f}"
+
+  rm $cookies
+
+  if apple_download_ok "${f}" "${size}" "${sha}"
+  then
+    trap - EXIT ERR TERM
+    echo ${f}
+  else
+    die "Download of ${f} failed!"
+  fi
+}
+
+[ -n "$4" ] || die 'Must supply url filename file_size shasum'
+do_apple_download "$1" "$2" "$3" "$4"

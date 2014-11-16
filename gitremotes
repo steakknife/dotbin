@@ -1,0 +1,6 @@
+#!/bin/sh -e
+config_file="$1"
+git_dir="`dirname \"$config_file\"`"
+git_root="`dirname \"$git_dir\"`"
+cd "$git_root"
+git remote -v # 2>&1 | awk '/(push)/{print$1,$2}'

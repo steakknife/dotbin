@@ -1,0 +1,2 @@
+#!/bin/sh
+exec strings /Applications/Xcode.app/Contents/"$@" | egrep '(atom|developer.apple.com/rss)'

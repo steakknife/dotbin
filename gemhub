@@ -1,0 +1,33 @@
+#!/bin/sh
+set -e
+
+username="${1}"
+repo="${2}"
+branch="${3:-master}"
+
+tempdir=`mktemp -d $$`
+gemset="temp$$"
+git clone "git://github.com/${username}/${repo}.git@${branch}" "$tempdir"
+pushd "${tempdir}" >/dev/null
+rvm gemset create $gemset
+rvm gemset use $gemset
+
+if [ -e Gemfile ]
+then
+  bundle install
+fi
+
+
+if [ -e Mainifest.txt ]
+then
+  gem install hoe
+elif [ -e Rakefile ]
+  rake build
+else
+  gem build *.gemspec
+fi
+gem install *.gem || gem install pkg/*.gem
+
+popd >/dev/null
+rvm gemset use global
+rvm --force gemset delete $gemset

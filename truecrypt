@@ -1,0 +1,2 @@
+#!/bin/sh
+exec /Applications/TrueCrypt.app/Contents/MacOS/TrueCrypt --text "$@"

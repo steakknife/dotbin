@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+set -ex
+
+command="$1"
+
+usage() {
+  cat << EOF >&2
+
+  usage $0 {create|clean|recreate} [python version]
+
+
+EOF
+  exit 1
+}
+
+die() {
+  echo "  !   $1" >&2
+  exit 1
+}
+
+get_python_version() {
+  $1 -V 2>&1
+}
+
+match_python_version() {
+  if get_python_version $1 | grep -qs $2 ; then
+    echo $1
+  else
+    die "$1 is not Python $2"
+  fi
+}
+
+select_python() {
+  if [ -x "$1" ]; then
+    echo "$1"
+    return
+  fi
+  case "$1" in
+2.7.1) match_python_version /usr/bin/python 2.7.1 ;;
+2.7.2) match_python_version /usr/local/bin/python 2.7.2 ;;
+2.7.3) match_python_version /usr/local/bin/python 2.7.3 ;;
+2.7|2.7.4) match_python_version /usr/local/bin/python 2.7.4 ;;
+'') which python ;;
+*) die "Python $1 not found"
+  esac
+}
+
+
+
+dir="venv"
+
+case $command in
+create)
+    [ -d $dir ] && die "$dir already exists"
+    virtualenv -v --distribute -p `select_python $2` $dir ;;
+clean) rm -rf $dir ;;
+recreate) $0 clean && $0 create $2 ;;
+*) usage ;;
+esac

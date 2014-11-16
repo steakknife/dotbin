@@ -1,0 +1,12 @@
+#!/bin/sh
+export GOPATH=$GOPATH:$PWD/..
+for dir in `find . -type d ! -path '*git*' ! -name '.'`
+do
+    if [ -n "$1" ]; then
+        echo "$dir" | grep -qs "$1" || continue
+    fi
+    pushd $dir >/dev/null
+    go test -i
+    go test 
+    popd >/dev/null
+done

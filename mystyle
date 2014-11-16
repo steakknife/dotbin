@@ -1,0 +1,15 @@
+#!/bin/sh
+exec astyle \
+  ‑‑add‑brackets \
+  --convert-tabs \
+  --indent=spaces=2 \
+  --style=1tbs \
+  --max-code-length=70 \
+  --break-blocks \
+  --unindent-switches \
+  --unindent-classes \
+  --unindent-modifiers \
+  --pad-header \
+  --pad-method-prefix \
+  --pad-method-colon=after \
+  "$@"

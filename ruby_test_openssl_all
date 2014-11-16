@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+
+test_ruby() {
+  test -x "$1" || return
+  echo -n "testing $1 $($1 -ropenssl -e 'puts OpenSSL::OPENSSL_VERSION') ... "
+
+  if "$1" -ropen-uri -e "open('https://opensource.apple.com').read" >/dev/null 2>&1; then
+    echo 'pass'
+  else
+    echo 'fail'
+  fi
+}
+
+echo "Testing ruby openssl by connecting to https://opensource.apple.com"
+{
+  if [ -d "$RUBIES_ROOT" ]; then
+    for RUBY in "$RUBIES_ROOT"/*; do
+      test_ruby "$RUBY/bin/ruby" 
+    done
+  fi
+  test_ruby /usr/bin/ruby
+} | tee /dev/stderr | if grep fail >/dev/null; then false; else true; fi

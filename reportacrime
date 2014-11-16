@@ -1,0 +1,2 @@
+#!/bin/sh
+exec mailtoopenrelay new.toad.com no-reply@no-reply.com paloalto@tipnow.org "$@"

@@ -1,0 +1,61 @@
+#!/usr/bin/env ruby
+
+csv = Dir['/usr/local/Cellar/dnscrypt-proxy/*/share/dnscrypt-proxy/dnscrypt-resolvers.csv'][0]
+
+class CSV
+  COMMA                     = ','
+  DOUBLE_QUOTE              = '"'
+  EMPTY_STRING              = ''
+  CRLF                      = '\r\n'
+  COLUMN_REGEX              = /[^",]+|"[^"]*"/
+  QUOTED_COLUMN_REGEX       = /\A"([^"]*)"\z/
+  NEEDS_QUOTES_COLUMN_REGEX = /,/
+  OPEN_MODE_WRITE           = 'wb'
+
+  attr_accessor :rows
+  attr_accessor :header
+
+  def initialize(rows, header)
+    @rows = rows
+    @header = header
+  end
+
+  def self.parse(filename, has_header = true)
+    first_line = true
+    rows = []
+    header = nil
+    open(filename).each_line {|line|
+     	row = line.strip.scan(COLUMN_REGEX).map { |col|
+        (col =~ QUOTED_COLUMN_REGEX) ? $1 : col
+      }
+     	if has_header && first_line
+        header, first_line = row, false
+     	else
+        rows << row
+     	end
+    }
+    new(rows, header)
+  end
+
+  # row is an Array of String
+  # result is String
+  def self.generate(row)
+    row.map { |col|
+      (col =~ NEEDS_QUOTES_COLUMN_REGEX) ? DOUBLE_QUOTE + col.to_s + DOUBLE_QUOTE : col
+    }.join COMMA 
+  end
+  
+  def to_s
+    result = EMPTY_STRING
+    result += self.class.generate(header) + CRLF if header
+    rows.each { |row|
+      result += self.class.generate(row) + CRLF
+    }
+    result
+  end
+  
+  def save(filename)
+    open(filename, OPEN_MODE_WRITE) { |f| f.write(self) }
+  end
+end
+

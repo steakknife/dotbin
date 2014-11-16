@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+GEM_NAME="$1"
+for GEM_DIR in `gem env path | tr ':' ' '`; do
+  find "$GEM_DIR/gems/$1"-* -type f 2>/dev/null | xargs -L1 file | egrep 'Mach-O ' | egrep -v 'object ' | sed 's/:[^:]*$//g' # | while read -r FILE; do
+#  find "$GEM_DIR/gems/$1"-* -type f 2>/dev/null | xargs -L1 file | egrep '(bundle|binary)' | sed 's/:[^:]*$//g' | while read -r FILE; do
+#     echo "Binary file $FILE"
+#    otool -l "$FILE" | grep ' name ' | grep -v '/usr/lib/dyld' | sed 's/^ *name //g;s/ ([^)]*)$//g'
+#  done
+done #| sort -u

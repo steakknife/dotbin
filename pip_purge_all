@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+PIP="${1-`which pip`}"
+$PIP freeze | sed 's/=.*//g' | while read -r REQUIREMENT; do
+  $PIP uninstall -y "$REQUIREMENT" || true
+done
+

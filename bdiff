@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+exec pipediff <(hex < "$1") <(hex < "$2") -u

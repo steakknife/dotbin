@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -e
+set -x
+
+ORIGINAL_PATH='/Applications/Xcode.app/'
+NEW_PATH='/Volumes/Applications/Applications/Xcode.app/'
+NEW_PATH_OLD='/Volumes/Applications/Applications/Xcode.app.old/'
+NEW_PATH_TMP='/Volumes/Applications/Applications/Xcode.app.tmp/'
+
+if ps aux | grep -v grep | grep -qs Xcode; then
+  echo "exit Xcode first"
+  exit 1
+fi
+
+echo 'around 250000 files'
+sudo rsync -avP --delete "$ORIGINAL_PATH" "$NEW_PATH_TMP"
+if [ -d "$NEW_PATH" ]; then
+  if [ -d "$NEW_PATH_OLD" ]; then
+    echo "oops. xcode backup already exists! $NEW_PATH_OLD"
+    exit 1
+  fi
+  sudo mv "$NEW_PATH" "$NEW_PATH_OLD"
+fi
+sudo mv "$NEW_PATH_TMP" "$NEW_PATH"
+sudo /usr/bin/xcode-select -switch "$NEW_PATH"
+sudo rm -rf "$ORIGINAL_PATH" "$NEW_PATH_OLD"

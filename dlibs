@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -e
+
+PROCESSED="$(mktemp -t XXXXX)"
+trap 'RESULT=$?; rm -f "$PROCESSED"; exit $RESULT' INT QUIT TERM EXIT
+
+UNAME=`uname`
+
+_dylibs() {
+  case "$UNAME" in
+  Darwin) /usr/bin/otool -l "$1" | grep --color=none -o '[^ ]*dylib' ;;
+  Linux) readelf -a "$1" | grep 'Shared library:' | sed 's/^.*\[//;s/\].*//' ;;
+  esac
+}
+
+dylibs() {
+  _dylibs "$1" | while read -r LIB; do
+    if [ "$LIB" = "$1" ]; then
+      :;
+    else
+      echo "$LIB"
+      if grep -q "$LIB" "$PROCESSED"; then
+        :;
+      else
+        echo "$LIB" >> "$PROCESSED"
+        dylibs "$LIB" 
+      fi
+    fi
+  done
+}
+
+dylibs "$(which "$1" 2>/dev/null || echo "$1")" | sort -u

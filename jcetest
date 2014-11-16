@@ -1,0 +1,36 @@
+#!/bin/sh
+# usage: jcetest          # for default java
+#        jcetest java6    # run with java executable java6 instead
+#        jcetest java7 javac7    # run with java executable java7 AND javac executable javac7 instead 
+#
+# requires jdk (javac) to run!
+set -e
+
+jce_test() {
+cat << JCE_TEST
+import javax.crypto.Cipher;
+public class JCETest {
+  public static void main(String[] args) throws Exception {
+    final int maxKeyLen = Cipher.getMaxAllowedKeyLength("AES");
+    final boolean unlimited = (maxKeyLen == Integer.MAX_VALUE);
+    System.out.print("JCE max key length: "); 
+    if (unlimited) {
+      System.out.print("unlimited");
+    } else {
+      System.out.print(maxKeyLen);
+    }
+    System.out.println();
+    System.exit((unlimited) ? 0 : 1);
+  }
+}
+JCE_TEST
+}
+
+JCE_TEMP_TEST_DIR="$(mktemp -d -t XXXXXXXXXXX)"
+trap 'result=$?; rm -rf "$JCE_TEMP_TEST_DIR"; exit $result' INT QUIT TERM ERR EXIT
+
+cd "$JCE_TEMP_TEST_DIR"
+
+jce_test > JCETest.java
+${2-javac} JCETest.java
+${1-java} JCETest

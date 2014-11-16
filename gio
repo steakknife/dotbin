@@ -1,0 +1,78 @@
+#!/bin/sh -e
+# Copyright (c) 2012 Barry Allard
+# MIT Licensed
+
+OUTPUT=cat
+
+# detect and use nyan-insanity
+[ -x "`which lolcat`" ] && OUTPUT="lolcat -F 2"
+
+usage () {
+
+  $OUTPUT << EOF >&2
+
+    Usage: gio [-q] [-c] [-o] url [shortcut]
+
+        -q Quiet
+        -c Copy to the clipboard
+        -o Open in the browser
+
+        gio, a gimpy user of github's url shortener
+
+EOF
+  exit 1
+}
+
+[ x"$1" = x'-q' ] && shift && QUIET=1
+[ x"$1" = x'-c' ] && shift && COPY_ALSO=1
+[ x"$1" = x'-o' ] && shift && OPEN_ALSO=1
+[ -z "$1" ] && usage
+
+# Make me a powerful url
+RAWURL=`echo "$1" | sed 's%[^:]*://%%;s%^/%%'`
+SUBDOM="${RAWURL%github.com*}"
+URLPATH="${RAWURL#*github.com}"
+case "$SUBDOM" in
+  # *.github.com domains not yet supported by git.io: api ca.wiki cloud enterprise jobs pages wiki
+  # https:// not yet supported by github: develop(er)? (user's pages)
+  gist.|raw.|"") SSL_ENABLED='s' ;;
+  *) SSL_ENABLED='' ;; # just in case of some weird shell options
+esac
+URL="http$SSL_ENABLED://${SUBDOM}github.com${URLPATH}" 
+
+# Use a custom URL shortcut
+if [ -n "$2" ]; then
+  EXTRA="-F code=$2"
+fi
+
+# Shortening magic kung fu
+SHORT_URL=`curl -s -i http://git.io -F "url=$URL" $EXTRA | sed -n 's/[[:space:]]//g;s/^Location:\(.*\)/\1/p'`
+
+# Check the shortened url
+if echo $SHORT_URL | grep -v 'git\.io' >/dev/null 2>&1 ; then
+  echo "gio: Unable to shorten url" | $OUTPUT
+  exit 1
+fi
+
+# Show url unless QUIETed
+if [ -z "$QUIET" ]; then
+  echo $SHORT_URL | $OUTPUT
+fi
+
+# Copy to the clipboard
+if [ -n "$COPY_ALSO" ]; then
+  if [ -x "`which pbcopy`" ]; then
+    echo $SHORT_URL | pbcopy
+  else
+    echo 'gio: No clipboard command-line available :(' | $OUTPUT
+  fi
+fi
+
+# Open in a browser
+if [ -n "$OPEN_ALSO" ]; then
+  if [ -x "`which open`" ]; then
+    open "$SHORT_URL"
+  else
+    echo 'gio: No browser command-line available :(' | $OUTPUT
+  fi
+fi

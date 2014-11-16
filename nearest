@@ -1,0 +1,19 @@
+#!/bin/sh
+set -e
+
+debug() {
+  if [ -n "$DEBUG" ]; then
+    echo "$@" >&2
+  fi
+}
+
+for NAME in "$@"; do
+  debug "Timing $NAME"
+  TIME="$(ping -c 3 -m 255 -t 6 -W 2000 "$NAME" | cut -s -d/ -f6)"
+  if [ -n "$TIME" ]; then
+    echo "$TIME/$NAME"
+    debug "$NAME: $TIME ms"
+  else
+    debug "$NAME: timeout"
+  fi
+done | sort -g | head -1 | cut -d/ -f2 | grep --color=never .

@@ -1,0 +1,8 @@
+#!/bin/sh
+# fix ssh offending key shit
+set -e
+key_file_and_line="`SSH_ASKPASS=/bin/true \ssh -aknxNT $@ 2>&1 | grep 'Offend' | sed 's/Offending key in //'`"
+key_file="`echo $key_file_and_line | cut -d: -f1`"
+key_line="`echo $key_file_and_line | cut -d: -f2`"
+[ -n "$key_file" ] && [ -n "$key_line" ] && sed -i '' "${key_line}d" "$key_file"
+exec \ssh $@

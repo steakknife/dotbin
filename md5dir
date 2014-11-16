@@ -1,0 +1,3 @@
+#!/bin/sh
+cd "${@-.}"
+find . ! -type d -exec md5 {} \;

@@ -1,0 +1,10 @@
+#!/bin/sh
+set -e
+IF="${1-en1}"
+{ 
+networksetup -getairportpower $IF
+networksetup -setairportpower $IF off || true
+networksetup -getairportpower $IF
+networksetup -setairportpower $IF on
+networksetup -getairportpower $IF
+} 2>/dev/null

@@ -1,0 +1,14 @@
+#!/bin/sh
+git_remote() {
+  git remote -v | grep "^$1.*push)" | sed 's/.*://;s/ (push)//;s/\.git$//'
+}
+
+APP="${1:-heroku}"
+APP="$(git_remote $APP || echo $APP)"
+if [ -n "$2" ]; then
+  shift
+  OPTIONS="$@"
+fi
+
+heroku pg:reset DATABASE --app $APP --confirm $APP $OPTIONS
+

@@ -1,0 +1,2 @@
+#!/bin/sh
+echo doit | nc -G1 -w1 -A4 -tn 127.0.0.1 17778

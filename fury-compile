@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+set -e
+
+gem="${1}" ; shift
+orig_cwd="`pwd`"
+no_del="`echo - ${@} | grep -- \"-n\" || true`"
+options="`echo - ${@} | sed 's/^- //;s/-n//' || true`"
+test -z "${no_del}" && echo cleanup=true
+
+trap '\cd "${orig_cwd}" ; test -z "${no_del}" && \rm -rf "${tmp_dir}"' EXIT QUIT ERR
+
+tmp_dir="`test -n \"${TMPDIR}\" && cd \"${TMPDIR}\" ; echo -n \"${TMPDIR}\" ; mktemp -d fury-compile-XXXX`"
+
+platform="`uname`"
+arch="`uname -m`"
+ruby="`ruby -e'puts(RUBY_PLATFORM)'`"
+
+cd "${tmp_dir}"
+tmp_dir="`pwd`"
+
+gem fetch "${gem}" "${options}"
+
+original_gem="`ls *.gem`"
+original_sha1="`perl -MDigest::SHA=sha1_hex -le 'print sha1_hex<>' \"${original_gem}\"`"
+
+version="`echo ${original_gem} | sed \"s/^${gem}-//;s/\.gem$//\"`"
+
+cat << EOF
+        gem=${gem} (${original_gem}  sha1: ${original_sha1})
+gem_options=${options}
+    version=${version}
+       ruby=${ruby}
+   platform=${platform}
+       arch=${arch}
+EOF
+
+#gem_set="gem-compile-${gem}"
+
+#rvm gemset delete "${gem_set}" >/dev/null 2>&1 || true
+#rvm gemset create "${gem_set}"
+#rvm gemset use "${gem_set}"
+
+#gem install "${gem}" "${options}" --development
+
+gem compile "${gem}"*
+
+#rvm gemset use default
+#rvm gemset delete "${gem_set}"
+
+new_gem="`ls *.gem | grep -v -- \"^${original_gem}$\"`"
+new_version="`echo ${new_gem} | sed \"s/^${gem}-//;s/\.gem$//\"`"
+new_sha1="`perl -MDigest::SHA=sha1_hex -le 'print sha1_hex<>' \"${new_gem}\"`"
+echo "new_gem=${new_version} (sha1: ${new_sha1})"
+
+fury push "${new_gem}"

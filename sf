@@ -1,0 +1,11 @@
+#!/bin/sh
+
+while read line 
+do
+  line_no=`echo $line | grep 'known_hosts\:[0-9]' | sed 's/.*known_hosts://' | sed 's/[^0-9]//g'`
+  if [ x"$line_no" != x'' ]
+  then
+    sed -i -e "${line_no}d" ~/.ssh/known_hosts
+    exit 0
+  fi 
+done 

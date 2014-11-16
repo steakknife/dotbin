@@ -1,0 +1,69 @@
+#!/bin/sh
+#
+# If you want to disable auto-imported functions, uncomment the following
+# ADD_IMPORT_FUNCTIONS_PATCH=YES install-bash-fix
+#
+set -e
+
+LATEST_3_2_PATCH_LEVEL=57
+
+if [ "$1" = '-u' ]; then
+  sudo mv /bin/bash.orig /bin/bash
+  sudo mv /bin/sh.orig /bin/sh
+  echo 'patched bash uninstalled'
+  exit 0
+fi
+
+if /bin/bash --version | grep -q "3\.2\.$LATEST_3_2_PATCH_LEVEL"; then
+  echo "bash already patched to 3.2.$LATEST_3_2_PATCH_LEVEL"
+  exit 1
+elif /bin/bash import-functions >/dev/null 2>&1; then
+  echo 'bash already patched to 3.2.53 with disabling import functions by default'
+  exit 1
+elif /bin/bash --version | grep -q '3\.2\.5[13]'; then
+  echo "Patching to 3.2.$LATEST_3_2_PATCH_LEVEL"
+else # if bash is too new or too old
+  echo 'bash version not patchable' >&2
+  exit 1
+fi
+
+apply_standard_patch() {
+  curl https://ftp.gnu.org/pub/gnu/bash/bash-3.2-patches/bash32-$1 | patch -p0
+}
+
+# prepare
+cd $TMPDIR
+rm -rf install-bash-fix
+mkdir install-bash-fix
+cd install-bash-fix
+
+# download
+curl https://opensource.apple.com/tarballs/bash/bash-92.tar.gz | tar zxf -
+
+# patch
+cd bash-92/bash-3.2
+
+for NN in `seq -f '%03g' 52 53`; do
+  apply_standard_patch $NN
+done
+if [ "$ADD_IMPORT_FUNCTIONS_PATCH" = YES ]; then
+  curl -L https://gist.githubusercontent.com/steakknife/3dc751a485dd069b03eb/raw/import_functions.patch | patch -p0
+else
+for NN in `seq -f '%03g' 54 $LATEST_3_2_PATCH_LEVEL`; do
+  apply_standard_patch $NN
+done
+fi
+cd ..
+
+# build
+xcodebuild
+
+# install
+sudo cp -ip /bin/bash /bin/bash.orig
+sudo cp -ip /bin/sh /bin/sh.orig
+sudo cp -f build/Release/bash /bin/bash
+sudo cp -f build/Release/sh /bin/sh
+
+# cleanup
+cd ..
+rm -rf install-bash-fix

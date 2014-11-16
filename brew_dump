@@ -1,0 +1,38 @@
+#!/bin/sh
+set -e
+
+jsons() { 
+  find /usr/local/Cellar -name INSTALL_RECEIPT.json -exec grep -H . {} \;
+}
+
+head_only() {
+  grep /HEAD/
+}
+
+not_head_only() {
+  grep -v /HEAD/
+}
+
+
+tapped_from_builtin() {
+  grep '"tapped_from":"Homebrew/homebrew"'
+}
+
+tapped_from_custom() {
+  grep -v '"tapped_from":"Homebrew/homebrew"'
+}
+
+options() { 
+  sed 's%^\([^:]*\):{"used_options":\[\([^]]*\)\].*%\1:\2%g;s/","/" "/g'
+}
+
+options_to_command() {
+  sed "s%^[^:]*/Cellar/\([^/]*\)[^:]*:\\(.*\\)%brew install \\1 $* \\2%g"
+}
+
+
+jsons | tapped_from_builtin | not_head_only | options | options_to_command
+jsons | tapped_from_builtin |     head_only | options | options_to_command '--HEAD'
+
+jsons | tapped_from_custom | not_head_only  | options | options_to_command          "# custom"
+jsons | tapped_from_custom |     head_only  | options | options_to_command '--HEAD' "# custom"

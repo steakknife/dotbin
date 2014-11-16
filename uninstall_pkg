@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+set -e
+test -n "$DEBUG" && set -x
+
+RECEIPT_DIR='/var/db/receipts'
+
+trap 'RESULT=$?; rm -f "$BOMS"; exit $RESULT' EXIT ERR INT QUIT TERM PIPE HUP
+BOMS="$(mktemp -t uninstall_pkg)"
+
+
+_rm() {
+  echo "rm '$@'"
+  if [ -z "$DRY_RUN" ]; then
+    sudo rm "$@"
+  fi
+}
+
+_rmdir() {
+  D="$1"
+  if [ "$D" = . ]; then
+    D="$PWD"
+  fi
+  echo "rmdir '$D'"
+  if [ -z "$DRY_RUN" ]; then
+    sudo rmdir "$D"
+  fi
+}
+
+exec 3<&0 # make stdin available on fd3
+
+find "$RECEIPT_DIR" -type f -name "*$1*.bom" | while read -r BOM; do 
+  PLIST="$(echo "$BOM" | sed 's/\.bom$/.plist/')"
+  INSTALL_PREFIX_PATH="/$(defaults read "$PLIST" InstallPrefixPath)"
+
+  echo
+  echo "----- Start '$BOM'"
+  lsbom -fls "$BOM" | sed "s%^%file $INSTALL_PREFIX_PATH%g;s%\./%/%g"
+  lsbom -dls "$BOM" | sed "s%^% dir $INSTALL_PREFIX_PATH%g;s%\./%/%g"
+  echo "------ End '$BOM'"
+  echo
+  read -p "Uninstall using '$BOM' ? [Yn] " -u 3 ANS
+
+  if [ "$ANS" = y ] || [ "$ANS" = Y ]; then
+    (
+      cd "$INSTALL_PREFIX_PATH"
+      lsbom -fls "$BOM" | while read -r FILENAME; do
+        _rm -f "$FILENAME"
+      done
+      lsbom -dls "$BOM" | while read -r DIR; do
+        echo "DIR='$DIR'"
+        _rmdir -p "$DIR"
+      done
+    )
+
+    sudo _rm -f "$BOM" "$PLIST"
+  fi
+done 

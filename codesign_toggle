@@ -1,0 +1,9 @@
+#!/bin/sh
+set -e
+if readlink /usr/bin/codesign | grep -q 1010; then
+  sudo ln -sf /usr/bin/codesign.insecure /usr/bin/codesign
+  echo "using insecure codesign"
+else
+  sudo ln -sf /usr/bin/codesign.1010 /usr/bin/codesign
+  echo "using 10.10 codesign"
+fi

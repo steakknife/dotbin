@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+NMAPFLAGS='-sT -Pn -p1-65535 --disable-arp-ping --stats-every 5s'
+#NMAPFLAGS='-sS -A -Pn --disable-arp-ping --stats-every 5s'
+if [ -n "$FAST" ]; then
+  NMAPFLAGS="$NMAPFLAGS -T5"
+fi
+sudo nmap $NMAPFLAGS "$@"

@@ -1,0 +1,29 @@
+#!/bin/sh
+set -e
+
+
+if [ -n "$1" ]; then
+  RESOLVER="$1"
+else
+  PLIST=/Library/LaunchDaemons/homebrew.mxcl.dnscrypt-proxy.plist
+  RESOLVER="$(grep -- '--resolver-name=' $PLIST | sed 's/[^=]*=//;s/<.*//')"
+fi
+
+CSV="$(find /usr/local/Cellar/dnscrypt-proxy/*/share/dnscrypt-proxy/dnscrypt-resolvers.csv | head -1)"
+if [ -z "$CSV" ]; then
+  echo "dnscrypt-resolvers.csv not found" >&2
+  exit 1
+fi
+
+
+HOSTPORT="$(grep "$RESOLVER," "$CSV" | cut -d, -f13)"
+if [ -z "$HOSTPORT" ]; then
+  echo "dnscrypt resolver not found" >&2
+  exit 1
+fi
+
+HNAME="$(echo "$HOSTPORT" | cut -d: -f1)"
+PORT="$(echo "$HOSTPORT" | cut -d: -f2)"
+
+echo tping "$HNAME" "$PORT"
+tping "$HNAME" "$PORT"

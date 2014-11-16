@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -ex
+while [[ "$#" -gt 1 ]]; do
+  haml="$(echo "$1" | sed 's/erb/haml/')"
+  html2haml -e "$1" "$haml"
+  mv "$1" "$1.bak"
+  shift
+done

@@ -1,0 +1,2 @@
+#!/bin/sh
+exec df -ht hfs,exfat,fat,ntfs

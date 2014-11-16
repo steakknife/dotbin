@@ -1,0 +1,2 @@
+#!/bin/sh
+exec ruby -ropen-uri -e "open('https://opensource.apple.com').read"

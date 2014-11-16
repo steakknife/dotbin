@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+export RAILS_ENV=development
+bundle exec rspec spec "${@}"

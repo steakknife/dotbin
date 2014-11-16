@@ -1,0 +1,35 @@
+#!/bin/sh
+mac_addr_regex='([a-fA-F0-9]{2}:){5}[a-fA-F0-9]{2}'
+iface=en1
+if [ "$1" = "-h" ]; then
+  cat << 'EOF' 
+  
+  usage: spoof [-r|-h|hh:hh:hh:hh:hh:hh]
+ 
+     (no arguments)     pick a random mac address to spoof
+
+     hh:hh:hh:hh:hh:hh  specify a mac address to spoof
+
+     -r                 reset to built-in default mac address
+
+     -h                 this help
+
+EOF
+
+  exit 0
+elif [ "$1" = "-r" ]; then
+  mac_addr=`networksetup -getmacaddress $iface | egrep -o $mac_addr_regex`
+  shift
+elif [ -z "$1" ]; then
+#  mac_addr=`echo ${RANDOM:0:2}:${RANDOM:0:2}:${RANDOM:0:2}:${RANDOM:0:2}:${RANDOM:0:2}:${RANDOM:0:2}`
+  mac_addr=`networksetup -getmacaddress $iface | egrep -o '([a-fA-F0-9]{2}:){2}' | tr '\n' '\0'  ; echo ${RANDOM:0:2}:${RANDOM:0:2}:${RANDOM:0:2}:${RANDOM:0:2}`
+  echo new mac=$mac_addr
+elif ! echo "$1" | egrep -qs $mac_addr_regex ; then
+  echo "first argument must be a mac address, blank for random or -r to reset to default" >&2
+  exit 1
+else
+  mac_addr="$1"
+  shift
+fi
+sudo ifconfig $iface ether $mac_addr "$@"
+ifconfig $iface

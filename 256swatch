@@ -1,0 +1,33 @@
+#!/usr/bin/env ruby
+#
+# Usage: 256swatch [-b [foreground [test pattern]]]
+#
+#              -b    print background swatches instead, defaults to normal
+#
+#      foreground    force foreground (decimal), defaults to normal
+#
+#    test pattern    text to display, defaults to 'test'
+
+
+def swatch(s, width=16)
+  def foreground(x) ; "\033[38;5;#{x}m" end
+  def background(x) ; "\033[48;5;#{x}m" end
+  def reset         ; "\033[0m"         end
+
+  result = '    ' + (0...width).map{|x|sprintf "%*d",s.size-1+(x==0?0:2),x}.join + "\n"  # header
+  color  = 0
+  begin #   row header              each cell     stop if done              color         cell reset       eol
+    result += sprintf("%3d ",color)+(0...width).collect{
+      yield(color+=1).to_s + s + reset
+    }.join(' ')+"\n"
+  end until color == 256
+  result
+end
+
+
+puts <<-eos
+
+#{swatch(ARGV[2]||"test") { |x| (ARGV[0] ? background(x) : foreground(x)) +
+                                (ARGV[1] ? foreground(ARGV[1].to_i) : '') }}
+
+eos

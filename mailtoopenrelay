@@ -1,0 +1,33 @@
+#!/bin/sh -e
+set -x
+
+HOST="${1-smtp.toad.com}"
+PORT="25"
+FROM="${2-no-reply@no-reply.com}"
+TO="$3"
+SUBJECT="$4"
+
+TMP_FILE="$(mktemp -t openrelay)"
+HEADER="$(mktemp -t openrelay)"
+DOT="$(mktemp -t openrelay)"
+
+trap 'RESULT=$?; rm -f $TMP_FILE $HEADER $DOT; exit $RESULT' INT TERM QUIT EXIT
+
+cat > "$TMP_FILE"
+
+cat > "$HEADER" << HEADER 
+HELO $HOST
+MAIL From:$FROM
+RCPT To:$TO
+DATA
+From: $FROM
+To: $TO
+Subject: $SUBJECT
+
+HEADER
+
+cat > "$DOT" << DOT
+.
+DOT
+
+cat "$HEADER" "$TMP_FILE" "$DOT" | nc $HOST $PORT

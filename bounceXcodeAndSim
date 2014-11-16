@@ -1,0 +1,6 @@
+#!/bin/sh
+set -e
+processes='sim64 ibtoold backboard kbd debugserver accountsd assetsd sociald SpringBoard distnoted apsd lsd BTServer SimulatorBrodge Xcode'
+killall $processes "iPhone Simulator" "Interface Builder Cocoa Touch"
+killall -9 $processes "iPhone Simulator" "Interface Builder Cocoa Touch"
+open `xcode-select -print-path`/../..

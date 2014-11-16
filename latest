@@ -1,0 +1,1738 @@
+#!/usr/bin/env bash
+set -e
+# if everyone implemented http://foo.org/release/current, this would be a one-liner
+
+CLEAN_FILES=''
+
+trap 'RESULT=$?; rm -rf "$CLEAN_FILES"; exit $RESULT' INT TERM EXIT ERR QUIT
+
+
+# requires: ruby curl egrep openssl bash diff mktemp egrep grep sed head tail sort cat cut
+
+# broken
+#
+# elasticsearch (multiple version numbers returned)
+# mariadb (multiple version numbers returned)
+
+# TODO
+#
+# macports
+# homebrew (brew)
+# unity
+# ant
+# maven
+# gradle
+# ivy
+#
+# x torbrowser
+# x firefox
+# x safari
+# x internet explorer
+# x chrome
+# chromium
+# opera
+#
+# cauliflowervest
+# openbsm
+# monkeysphere
+# fwknop
+# autossh
+# ant
+# maven
+# junit
+# postgres_jdbc
+# mysql_jdbc
+# nasm
+# gc (boheme garbage collector)
+# libatomic_ops
+# autofs
+# libedit
+# libaio
+# libarchive
+# qt
+# alsa-lib
+# mesalib
+# d-bus
+# dbus-glib
+# doxygen
+# ctags
+# docbook-xml
+# docbook-xsl
+# libgcrypt
+# libgpg-error
+# zip
+# unzip
+# graphviz
+# ghostscript-fonts
+# ghostscript-fonts-other
+# libpng
+# libtiff
+# freetype
+# libjpeg
+# freeglut
+# fontconfig
+# gdk-pixbuf
+# librsvg
+# pango
+# harfbuzz
+# giflib
+# libexif
+# imagemagick
+# pixman
+# glib2
+# gtk+
+# gtk+-doc
+# atk
+# libffi
+# gobject-introspection
+# lzo
+# libssh2
+# ldns
+# libcap2
+# strace
+# ispell
+# iptables
+# kbd
+# module-init-tools
+# sysklogd
+# gpgme
+# cyrus sasl
+# cracklib
+# cracklib-words http://downloads.sourceforge.net/cracklib/
+# ConsoleKit
+# linux pam
+# tripwire
+# shadow
+# mozilla nspr
+# mozilla nss
+# polkit
+# p11-kit
+# shadow https://www.archlinux.org/packages/core/x86_64/shadow/
+# cups
+# cups-filters
+# cairo
+# avahi
+# mailx
+# procps-ng
+# libpipeline
+# iproute2
+# iana-etc
+# GNU cvs
+# opencvs
+# etckeeper
+# tftp-hpa
+
+has_command() {
+  which "$@" >/dev/null 2>&1
+}
+
+stderr() {
+  echo "$@" >&2
+}
+
+warn() {
+  [ -n "$SILENT" ] && return
+  stderr "$@"
+}
+
+note() {
+  warn "Note: $@"
+}
+
+die() {
+  warn "$@"
+  exit 1
+}
+
+match() {
+  if [ -n "$UNCACHABLE" ]; then
+    cat
+  else
+    egrep --color=none "$@"
+  fi
+}
+
+note_insecure_and_unsigned() {
+  note "$@ NEITHER sign releases NOR provide downloads over HTTPS.  Code should not be trusted."
+}
+
+note_insecure() {
+  note "$@ signs releases but does not provide downloads over HTTPS.  Be sure to verify releases with GPG and/or hashes from trusted mechanisms."
+}
+
+note_unsigned() {
+  note "$@ provide downloads over HTTPS but does not sign releases.  There is no way to verify downloaded artifacts are exactly what the developer created."
+}
+
+_fetch_load_headers() {
+  LAST_MODIFIED="`grep -i 'last-modified' "$HEADERS_FILE" 2>/dev/null | sed 's/[^:]*:[ ]*//;s/[^A-Za-z0-9:, -]//g'`"
+  ETAG="`grep -i 'etag' "$HEADERS_FILE" 2>/dev/null | sed 's/[^:]*:[ ]*//;s/[^A-Za-z0-9:, -]//g'`"
+}
+
+_fetch_offline() {
+  test -e "$CACHED_FILE" || die "$1 unavailable"
+  warn "$1 using cached, may not be current"
+  cat "$CACHED_FILE"
+}
+
+_curl() {
+  # prevent user-agent bias
+  USER_AGENT='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9) AppleWebKit/537.71 (KHTML, like Gecko) Version/7.0 Safari/537.71'
+
+  # avoid bourne shell header mangling (no permutation of quoting will work)
+  if [ -n "$DEBUG" ]; then
+    CURL_OPTS='-v0L'
+  else
+    CURL_OPTS='-s0L'
+  fi
+  if [ -n "$LAST_MODIFIED" ]; then
+    if [ -n "$ETAG" ]; then
+      curl $CURL_OPTS -A "$USER_AGENT" -H "If-None-Match: \"$ETAG\"" -H "If-Modified-Since: $LAST_MODIFIED" "$@"
+    else
+      curl $CURL_OPTS -A "$USER_AGENT"                               -H "If-Modified-Since: $LAST_MODIFIED" "$@"
+    fi
+  else
+    if [ -n "$ETAG" ]; then
+      curl $CURL_OPTS -A "$USER_AGENT" -H "If-None-Match: \"$ETAG\""                                        "$@"
+    else
+      curl $CURL_OPTS -A "$USER_AGENT"                                                                      "$@"
+    fi
+  fi
+}
+
+_fetch_handle_unmodified() {
+  if [ "$(wc -c < "$CACHED_FILE")" = 0 ]; then
+    warn "$1 unavailable"
+    return 1
+  fi
+
+
+  # cached data is valid, cleanup whatever _curl downloaded
+  rm -f "$CACHED_FILE_TEMP" "$HEADERS_FILE_TEMP"
+
+
+  if [ -n "$DEBUG_CACHE" ]; then
+    stderr "$1 cached content is current"
+    echo "$(( $(cat "$DEBUG_CACHE_CURRENT_FILE") + 1))" > "$DEBUG_CACHE_CURRENT_FILE"
+  fi
+  if [ -n "$UNCACHABLE" ]; then
+    stderr "$1 is cachable"
+    return
+  fi
+}
+
+_fetch_handle_uncachable_or_modified() {
+  # if nothing was downloaded
+  if [ ! -e "$CACHED_FILE_TEMP" ] || [ "$(wc -c < "$CACHED_FILE_TEMP")" = 0 ]; then
+    warn "$1 unavailable"
+    return 1
+  fi
+
+  # if no headers were returned
+  if [ ! -e "$HEADERS_FILE_TEMP" ]; then
+    stderr "$HEADERS_FILE_TEMP does not exist"
+  fi
+
+  # overwrite any existing body with the fresh body 
+  mv "$CACHED_FILE_TEMP" "$CACHED_FILE"
+
+  # overwrite corresponding existing headers with fresh headers
+  mv "$HEADERS_FILE_TEMP" "$HEADERS_FILE"
+
+  # if testing for cachability
+  if [ -n "$UNCACHABLE" ]; then
+    if diff "$CACHED_FILE".tmp "$CACHED_FILE" >/dev/null 2>&1; then
+      echo "cachable"
+    else
+      echo "uncachable"
+    fi
+    return
+  fi
+  if [ -n "$DEBUG_CACHE" ]; then
+    stderr "$1 cached content stale or uncacheable"
+    echo "$(( $(cat "$DEBUG_CACHE_UNKNOWN_FILE") + 1))" > "$DEBUG_CACHE_UNKNOWN_FILE"
+  fi
+}
+
+fetch() {
+  if [ -n "$DISABLE_CACHE" ]; then
+    _curl "$2"
+    return
+  fi
+
+  OBJ_DIR="./tmp/$1"
+  HEADERS_FILE="$OBJ_DIR/headers"
+  HEADERS_FILE_TEMP="$OBJ_DIR/headers.tmp"
+  CACHED_FILE="$OBJ_DIR/cached"
+  CACHED_FILE_TEMP="$OBJ_DIR/cached.tmp"
+
+  if [ -n "$OFFLINE" ]; then
+    _fetch_offline
+    return
+  fi
+
+
+  # prepare for caching and results
+  mkdir -p "$OBJ_DIR"
+
+  # if cached, grab the Last-Modified and Etag fields (might want Expires too)
+  _fetch_load_headers
+  _curl -D "$HEADERS_FILE_TEMP" "$2" -o "$CACHED_FILE_TEMP"
+
+  # Is the result not modified?
+  if grep -qi ' 304 ' "$HEADERS_FILE_TEMP"; then
+    _fetch_handle_unmodified "$1" || return
+  else
+    _fetch_handle_uncachable_or_modified "$1" || return
+  fi
+
+  # if we got here, then the cached file is valid or cached
+  cat "$CACHED_FILE"
+}
+
+github() {
+  FILTER="${2-[0-9][^\"]*}"
+  #fetch https://github.com/$1/releases | grep tag-name | egrep -iv '(rc|pre|wip|beta|alpha)' | grep -o "$FILTER" | head -1
+#  echo "FILTER='$FILTER'"
+  fetch github/$1 https://github.com/$1/releases | match -o '/releases/tag/[^"]*">' | match -o "$FILTER" | match -v '(alpha|beta|rc|wip|pre)' | sort_versions | tail -1
+}
+
+googlecode() {
+  FILTER="${2-[0-9][0-9\.]*\.[0-9\.]*[0-9]}"
+  fetch googlecode/$1 https://code.google.com/p/$1/downloads/list | match -A5 '<td class="vt col_1" width="100%"' | match -o "$FILTER" | head -1
+}
+
+
+sf_raw() {
+  fetch "sf/$1/$2" "http://sourceforge.net/projects/$1/files/$2"
+}
+
+sf() {
+  if [ -n "$2" ]; then
+    FILTER="$2"
+  else
+    FILTER="[0-9][0-9]*\.[0-9\.]*[0-9]"
+  fi
+  sf_raw "$1" "$3" | match -A2 'Looking for the latest version?' | match -o "$FILTER" | head -1
+}
+
+pypi() {
+  fetch "pypi/$1" https://pypi.python.org/pypi/$1 | match -o "$1 [0-9][0-9]*\.[0-9\.]*[0-9]" | match -o '[0-9][0-9]*\.[0-9\.]*[0-9]' | head -1
+}
+
+npm() {
+  fetch "npm/$1" https://npmjs.org/package/$1 | match -o -A4 '<th>Version</th>' | match -o '[0-9][0-9]*\.[0-9\.]*[0-9]'
+}
+
+freedesktop() {
+  FILTER="${2-[0-9]*\.[\.0-9]*[0-9]}"
+  fetch freedesktop/$1 http://$1.freedesktop.org/releases/ | match -o "$1-$FILTER" | sort -u |  sort_versions | tail -1 | match -o "$FILTER"
+}
+
+sort_versions() {
+  ruby -e '
+def cmppart(x, y)
+  x =~ /([0-9]*)(.*)/
+  x_n = $1.to_i
+  x_t = $2
+  y =~ /([0-9]*)(.*)/
+  y_n = $1.to_i
+  y_t = $2
+  if (x_n == y_n) 
+    if (x_t == y_t)
+      return 0
+    elsif (x_t < y_t)
+      return -1
+    else
+      return 1
+    end
+  elsif (x_n < y_n)
+    return -1
+  else
+    return 1
+  end
+end
+def cmp(left, right)
+  lparts = left.split(".")
+  rparts = right.split(".")
+
+  if lparts.length < rparts.length
+    lparts, rparts = rparts, lparts
+    swap = true
+  end
+  lparts.zip(rparts).map do |l,r|
+    if (!l.nil? && r.nil?) || cmppart(l,r) > 0
+      return (swap) ? -1 : 1
+    elsif (l.nil? && !r.nil?) || cmppart(l,r) < 0
+      return (swap) ? 1 : -1
+    end
+  end
+  return 0
+end
+puts STDIN.read.split("\n").sort { |l,r| cmp(l,r) }
+'
+}
+
+gnu_alpha() {
+  FILTER="${2-[0-9][0-9]*\.[0-9][0-9\.a-z]*}"
+  fetch gnu_alpha/$1 http://alpha.gnu.org/gnu/$1/ | match -o "$1-[0-9\.a-z]*\.tar" | match -o "$FILTER" | sed 's/.tar.*//g' | sort -u | sort_versions | tail -1
+}
+
+gnu() {
+  FILTER="${2-[0-9][0-9]*\.[0-9][0-9\.a-z]*}"
+  fetch gnu/$1 https://ftp.gnu.org/gnu/$1/ | match -o "$1-[0-9\.a-z]*\.tar" | match -o "$FILTER" | sed 's/.tar.*//g' | sort -u | sort_versions | tail -1
+}
+
+gnu_savannah() {
+  FILTER="${2-[0-9][0-9\.]*[0-9]}"
+  fetch gnu_savannah/$1 http://download.savannah.gnu.org/releases/$1/ | match -o "$1-[0-9\.a-z]*\.tar" | match -o "$FILTER" | sed 's/.tar.*//g' | sort -u | sort_versions | tail -1
+}
+
+
+
+# browsers
+latest_torbrowser() {
+  fetch torbrowser https://www.torproject.org/projects/torbrowser.html.en | match -o '<em>([^<]*)</em>' | head -1 | match -o '[0-9][0-9\.-]*'
+}
+
+latest_firefox() {
+  fetch firefox https://www.mozilla.org/en-US/firefox | match -o 'data-latest-firefox="[^"]*"' | match -o '[0-9][0-9\.-]*'
+}
+
+latest_chrome() {
+  note_insecure_and_unsigned 'chrome'
+  fetch chrome http://googlechromereleases.blogspot.com/search/label/Stable%20updates | match -o '[0-9][0-9\.]*\.[0-9\.]*\.[0-9\.]*[0-9]' | head -1
+}
+
+latest_ie() {
+  warn 'Microsoft does not publish Internet Explorer version information'
+  echo '11.0.9600.16438'
+}
+
+latest_safari() {
+  warn 'Apple does not publish Safari version information'
+  echo '7.1 (9537.85.10.17.1)'
+}
+
+# filesystems
+
+latest_e2fsprogs() {
+  note_unsigned 'e2fsprogs'
+  fetch e2fsprogs https://git.kernel.org/cgit/fs/ext2/e2fsprogs.git/ | match -o 'v[0-9]\.[0-9]*\.[0-9]*</a></td><td>' | match -o '[0-9]\.[0-9]*\.[0-9]*' | head -1
+}
+
+latest_jfsutils() {
+  note_insecure_and_unsigned 'jfsutils'
+  fetch jfsutils http://jfs.sourceforge.net/source.html | match -o '<td>[^<]*</td>' | match -o '[0-9]\.[0-9]*\.[0-9]*' | head -1
+}
+
+latest_xfsprogs() {
+  note_unsigned 'xfsprogs'
+  fetch xfsprogs https://git.kernel.org/cgit/fs/xfs/xfsprogs-dev.git/ | match -o 'v[0-9]\.[0-9]*\.[0-9]*</a></td><td>' | match -o '[0-9]\.[0-9]*\.[0-9]*' | head -1
+}
+
+latest_btrfsprogs() {
+  note_unsigned 'btrfs-progs'
+  fetch btrfsprogs https://git.kernel.org/cgit/linux/kernel/git/mason/linux-btrfs.git/ | match -o '>v[0-9\.]*</a></td><td>' | match -o '[0-9\.]*[0-9]' | head -1
+}
+
+latest_zfs() {
+  note_insecure 'zfs'
+  fetch zfs http://zfsonlinux.org/ | match -o '>[^<]*</a>' | match -o '[0-9]\.[0-9]*\.[0-9]*' | head -1
+}
+
+latest_dosfstools() {
+  note_insecure 'dosfsutils'
+  fetch dosfsutils http://daniel-baumann.ch/gitweb/?p=software/dosfstools.git | match -o 'v[0-9]\.[0-9]*\.[0-9]*</a></td>' | match -o '[0-9]\.[0-9]*\.[0-9]*' | head -1
+}
+
+# shells
+
+latest_bash() {
+  gnu 'bash'
+}
+
+latest_tcsh() {
+  note_insecure_and_unsigned 'tcsh'
+  fetch tcsh http://www.tcsh.org/MostRecentRelease | match -o '<strong>[^<]*</strong>' | match -o '[0-9]\.[0-9]*\.[0-9]*' | tail -1
+}
+
+latest_pdksh() {
+  note_insecure_and_unsigned 'pdksh'
+  fetch pdksh 'http://www.cs.mun.ca/~michael/pdksh/' | match -A1 'The current stable version is' | match -o '[0-9]\.[0-9]*\.[0-9]*' | tail -1
+}
+
+latest_zsh() {
+  note_insecure_and_unsigned 'zsh'
+  sf zsh
+#  fetch zsh http://zsh.sourceforge.net/Arc/source.html | match -o '[0-9]\.[0-9]*\.[0-9]*' | tail -1
+}
+
+latest_fish() {
+  note_insecure_and_unsigned 'fish'
+  github 'fish-shell/fish-shell'
+}
+
+latest_dash() {
+  note_insecure_and_unsigned 'dash'
+  fetch dash http://gondor.apana.org.au/~herbert/dash/files/ | match -o '[0-9]\.[0-9]*\.[0-9]*' | tail -2 | head -1
+}
+
+latest_busybox() {
+  note_insecure 'busybox'
+  fetch busybox http://www.busybox.net/ | match -o 'BusyBox [^<]* \(stable\)</b>' | match -o '[0-9]\.[0-9]*\.[0-9]*' | head -1
+}
+
+
+# libraries
+
+latest_openssl() {
+  fetch openssl 'https://www.openssl.org/source/' | match LATEST | match -o '[0-9]\.[0-9]\.[0-9][a-z]?' | head -1
+}
+
+latest_zlib() {
+  note_insecure_and_unsigned 'zlib'
+  fetch zlib http://zlib.net | match '<FONT SIZE="\+2"><B>' | match -o '[0-9]\.[0-9]\.[0-9]' 
+}
+
+latest_libyaml() {
+  note_insecure_and_unsigned 'libYAML'
+  fetch libyaml http://pyyaml.org/wiki/LibYAML | match -o 'The current release of LibYAML: <strong>[^<]*</strong>' | match -o '[0-9][0-9\.]*\.[0-9\.]*[0-9]'
+}
+
+latest_expat() {
+  note_unsigned 'expat'
+  sf 'expat'
+}
+
+latest_libxml2() {
+  note_insecure_and_unsigned 'libxml2'
+  fetch libxml2 http://xmlsoft.org/sources/ | match -o 'LATEST_LIBXML2_IS_[0-9\.]*' | sed 's/LATEST_LIBXML2_IS_//' | tail -1
+}
+
+latest_libxslt() {
+  note_insecure_and_unsigned 'libxslt'
+  fetch libxslt http://xmlsoft.org/sources/ | match -o 'LATEST_LIBXSLT_IS_[0-9\.]*' | sed 's/LATEST_LIBXSLT_IS_//' | tail -1
+}
+
+
+tz() {
+  fetch tz 'https://www.iana.org/time-zones'
+}
+
+latest_tzdata() {
+  MATCH_FRONT='td><b>Time Zone Data v. '
+  MATCH_FILTER='[a-z0-9]*'
+  MATCH_TAIL='</b>'
+  tz | match -o "$MATCH_FRONT$MATCH_FILTER$MATCH_FAIL" | sed "s%^$MATCH_FRONT%%g;s%$MATCH_TAIL\$%%g"
+}
+
+latest_tzcode() {
+  MATCH_FRONT='td><b>Time Zone Code v. '
+  MATCH_FILTER='[a-z0-9]*'
+  MATCH_TAIL='</b>'
+  tz | match -o "$MATCH_FRONT$MATCH_FILTER$MATCH_FAIL" | sed "s%^$MATCH_FRONT%%g;s%$MATCH_TAIL\$%%g"
+}
+
+latest_xmlto() {
+  fetch xmlto https://fedorahosted.org/xmlto/ | match 'Latest released version -' | match -o '[0-9][0-9\.]*' | head -1
+}
+
+latest_acl() {
+  note_insecure 'acl'
+  gnu_savannah 'acl'
+}
+
+latest_attr() {
+  note_insecure 'attr'
+  gnu_savannah 'attr'
+}
+
+latest_gzip() {
+  gnu 'gzip'
+}
+
+latest_binutils() {
+  gnu 'binutils'
+}
+
+latest_coreutils() {
+  gnu 'coreutils'
+}
+
+latest_diffutils() {
+  gnu 'diffutils'
+}
+
+latest_findutils() {
+  gnu 'findutils'
+}
+
+latest_file() {
+  note_insecure_and_unsigned 'file'
+  fetch file http://ftp.funet.fi/pub/unix/tools/file/ | match -o '>[^<]*</a>' | match -o '[0-9\.]*[0-9]' | tail -1
+}
+
+latest_sharutils() {
+  gnu 'sharutils'
+}
+
+latest_iputils() {
+  note_unsigned 'iputils'
+  sf 'iputils' 's[0-9]*[0-9]' | sed 's/^s//'
+}
+
+latest_which() {
+  gnu 'which'
+}
+
+latest_gawk() {
+  gnu 'gawk'
+}
+
+latest_glibc() {
+  gnu 'glibc'
+}
+
+latest_gdb() {
+  gnu 'gdb'
+}
+
+latest_strace() {
+  note_unsigned 'strace'
+  sf 'strace'
+}
+
+latest_grep() {
+  gnu 'grep'
+}
+
+latest_m4() {
+  gnu 'm4'
+}
+
+latest_dejagnu() {
+  gnu 'dejagnu'
+}
+
+latest_cmake() {
+  note_insecure_and_unsigned 'CMake'
+  fetch cmake http://www.cmake.org/cmake/resources/software.html | match -o '<h3>Latest Release \([0-9\.]*\)</h3>' | match -o '[0-9][0-9\.]*[0-9]'
+}
+
+latest_scons() {
+  note_unsigned 'scons'
+  sf 'scons'
+}
+
+latest_make() {
+  gnu 'make'
+}
+
+latest_patch() {
+  gnu 'patch'
+}
+
+latest_ed() {
+  gnu 'ed'
+}
+
+latest_sed() {
+  gnu 'sed'
+}
+
+latest_tar() {
+  gnu 'tar'
+}
+
+latest_cpio() {
+  gnu 'cpio'
+}
+
+latest_zip() {
+  sf_raw 'infozip' 'Zip 3.x (latest)' | match -A1 'class="name">' | match -o '[0-9][0-9]*\.[0-9\.]*[0-9]'
+}
+
+latest_unzip() {
+  sf_raw 'infozip' 'UnZip 6.x (latest)'| match -A1 'class="name">' | match -o '[0-9][0-9]*\.[0-9\.]*[0-9]'
+}
+
+latest_texinfo() {
+  gnu 'texinfo'
+}
+
+latest_autoconf() {
+  gnu 'autoconf'
+}
+
+latest_automake() {
+  gnu 'automake'
+}
+
+
+
+
+latest_bc() {
+  note_insecure 'bc'
+  gnu_alpha 'bc'
+}
+
+latest_bison() {
+  gnu 'bison'
+}
+
+latest_flex() {
+  note_unsigned 'flex'
+  sf 'flex'
+}
+
+latest_gdbm() {
+  gnu 'gdbm'
+}
+
+latest_gettext() {
+  gnu 'gettext'
+}
+
+latest_gmp() {
+  gnu 'gmp'
+}
+
+latest_mpc() {
+  gnu 'mpc'
+}
+
+latest_mpfr() {
+  gnu 'mpfr'
+}
+
+latest_ncurses() {
+  gnu 'ncurses'
+}
+
+latest_readline() {
+  gnu 'readline'
+}
+
+latest_icu() {
+  note_insecure 'icu'
+  fetch icu http://site.icu-project.org/ | match -o '>ICU [0-9\.]*</a> </font></font>released on ' | match -o '[0-9\.]*[0-9]'
+}
+
+latest_libidn() {
+  gnu 'libidn'
+}
+
+latest_psmisc() {
+  note_unsigned 'psmisc'
+  sf 'psmisc'
+}
+
+latest_groff() {
+  gnu 'groff'
+}
+
+latest_grub() {
+  gnu 'grub'
+}
+
+latest_iproute2() {
+  fetch iproute2 https://www.kernel.org/pub/linux/utils/net/iproute2/ | match -o '[0-9]\.[0-9]*\.[0-9]*' | tail -1
+}
+
+latest_sudo() {
+  note_insecure 'sudo'
+  fetch sudo http://www.sudo.ws/ | match -A1 'stable</a> release is' | match -o '[0-9]\.[0-9]*\.[0-9]*' | tail -1
+}
+
+latest_inetutils() {
+  gnu 'inetutils'
+}
+
+latest_less() {
+  gnu 'less' '[0-9][0-9]*'
+}
+
+latest_libtool() {
+  gnu 'libtool'
+}
+
+latest_ghostscript() {
+  gnu 'ghostscript'
+}
+
+latest_pkg_config() {
+  freedesktop 'pkg-config'
+}
+
+latest_wget() {
+  gnu 'wget'
+}
+
+latest_gnutls() {
+  gnu 'gnutls'
+}
+
+latest_curl() {
+  note_insecure 'cURL'
+  fetch curl http://curl.haxx.se/ | match 'The most recent stable version of curl is version ' | match -o '[0-9][\.0-9]*[0-9]'
+}
+
+latest_surfraw() {
+  note_insecure 'surfraw'
+  fetch surfraw http://surfraw.alioth.debian.org/ | match -A1 'Current surfraw version:' | match -o '[0-9][\.0-9]*[0-9]'
+}
+
+latest_pcre() {
+  fetch pcre https://ftp.csx.cam.ac.uk/pub/software/programming/pcre/ | match -o '>[^<]*</a></td>' | match -o '[\.0-9]*[0-9]' | tail -1
+}
+
+tcltk_version() {
+  sf 'tcl'
+}
+
+latest_tcl() {
+  note_unsigned 'tcl'
+  tcltk_version
+}
+
+latest_tk() {
+  note_unsigned 'tk'
+  tcltk_version
+}
+
+latest_x() {
+  note_insecure_and_unsigned 'X.org'
+  fetch x http://www.x.org/wiki/ | match -o 'The current X.Org release is.*</a>' | match -o 'X11R[0-9][0-9\.]*' | head -1
+}
+
+latest_daemontools() {
+  note_insecure_and_unsigned 'daemontools'
+  fetch daemontools http://cr.yp.to/daemontools/install.html | match -o '[0-9][0-9\.]*[0-9]' | tail -1
+}
+
+latest_runit() {
+  note_insecure_and_unsigned 'runit'
+  fetch runit http://smarden.org/runit/install.html | match -o '[0-9][0-9\.]*[0-9]' | tail -1
+}
+
+latest_upstart() {
+  note_insecure 'upstart'
+  fetch upstart http://upstart.ubuntu.com/download.html | match 'Latest Stable Release:' | match -o '[0-9][0-9\.]*[0-9]'
+}
+
+latest_systemd() {
+  note_insecure_and_unsigned 'systemd'
+  fetch systemd http://www.freedesktop.org/software/systemd/ | match -o 'systemd-[0-9]*.tar.xz' | match -o '[0-9]*[0-9]' | tail -1
+}
+
+latest_chef() {
+  note_unsigned 'chef'
+  github 'opscode/chef'
+}
+
+latest_puppet() {
+  note_unsigned 'puppet'
+  github 'puppetlabs/puppet'
+}
+
+latest_cfengine2() {
+  note_unsigned 'cfengine2'
+  fetch cfengine2 https://cfengine.com/source-code | match -o '>cfengine-2[0-9\.]*.tar.gz</a></p>' | match -o '[0-9][0-9\.]*[0-9]' | head -1
+}
+
+latest_cfengine3() {
+  note_unsigned 'cfengine3'
+  fetch cfengine3 https://cfengine.com/source-code | match -o '>cfengine-3[0-9\.]*.tar.gz</a></p>' | match -o '[0-9][0-9\.]*[0-9]' | head -1
+}
+
+latest_zmq() {
+  note_insecure_and_unsigned 'ZeroMQ'
+  fetch zmq http://zeromq.org/intro:get-the-software | match -o 'Stable Release [0-9][0-9\.]*' | sed 's/Stable Release //' | head -1
+}
+
+latest_rabbitmq() {
+  note_insecure 'RabbitMQ'
+  fetch rabbitmq http://www.rabbitmq.com/download.html | match 'The latest release of RabbitMQ' | match -o '[0-9][0-9\.]*'
+}
+
+latest_zookeeper() {
+  note_unsigned 'ZooKeeper'
+  fetch zookeeper https://zookeeper.apache.org/ | match 'stable' | match -o '[0-9][0-9\.]*' | head -1
+}
+
+latest_squid() {
+  note_insecure 'Squid'
+  fetch squid http://www.squid-cache.org/Versions/ | match -A8 'Stable Versions' | match -o '<td>[^<]*</td></tr>' | match -o '[0-9][0-9\.]*'
+}
+
+latest_varnish() {
+  fetch varnish https://www.varnish-cache.org/releases | match 'The current stable release of Varnish Cache is ' | match -o '[0-9][0-9\.]*' | head -1
+}
+
+lucene() {
+  fetch lucene https://lucene.apache.org/
+}
+
+latest_lucene() {
+  lucene | match -o 'Apache Lucene [0-9][0-9\.]*</div>' | match -o '[0-9][0-9\.]*' | head -1
+}
+
+latest_solr() {
+  lucene | match -o 'Apache Solr [0-9][0-9\.]*</div>' | match -o '[0-9][0-9\.]*' | head -1
+}
+
+latest_neo4j() {
+  note_insecure_and_unsigned 'Neo4j'
+  fetch neo4j http://www.neo4j.org/download | match -o 'Neo4j Stable Release [0-9][0-9\.]*' | match -o '[0-9][0-9\.][0-9\.]*'
+}
+
+latest_elasticsearch() {
+  note_unsigned 'elasticsearch'
+  fetch elasticsearch http://www.elasticsearch.org/download | match -o '<span class="version">[^<]*</span>' | match -o '[0-9][0-9\.]*'
+}
+
+latest_sendmail() {
+  fetch sendmail https://www.sendmail.com/sm/open_source/download/ | match 'Sendmail .* is available from' | match -o '[0-9][0-9\.]*' | head -1
+}
+
+latest_postfix() {
+  note_insecure 'Postfix'
+  fetch postfix http://www.postfix.org/announcements.html | match -o 'Postfix stable release [0-9][0-9\.]*[0-9]' | match -o '[0-9][0-9\.]*[0-9]' | head -1
+}
+
+latest_exim() {
+  note_insecure 'Exim'
+  fetch exim http://www.exim.org/ | match -o 'The current version is [0-9][0-9\.]*[0-9]' | match -o '[0-9][0-9\.]*[0-9]' | head -1
+}
+
+latest_mailx() {
+  note_unsigned 'heirloom mailx'
+  sf 'heirloom' '' 'heirloom-mailx/'
+}
+
+latest_dovecot() {
+  note_insecure 'Dovecot'
+  fetch dovecot http://www.dovecot.org/download.html | match -o 'v[0-9][0-9\.]*[0-9]' | match -o '[0-9][0-9\.]*[0-9]' | head -1
+}
+
+latest_spamassassin() {
+  fetch spamassassin https://spamassassin.apache.org/downloads.cgi | match -o 'Released version, [0-9][0-9\.]*[0-9]' | match -o '[0-9][0-9\.]*[0-9]' | head -1
+}
+
+gnupg() {
+  fetch gnupg http://gnupg.parentinginformed.com/ | match -o '<i>[^<]*</i>' | match -o '[0-9][0-9\.]*[0-9]'
+}
+
+
+latest_gnupg1() {
+  note_insecure 'GNUPG 1.x'
+  gnupg | head -1
+}
+
+latest_gnupg2() {
+  note_insecure 'GNUPG 2.x'
+  gnupg | tail -1
+}
+
+gnupg_lib() {
+  fetch $1 http://www.gnupg.org/download/ | match -io "$1 [0-9\.]* full source code" | match -o '[0-9][0-9\.]*[0-9]'
+}
+
+latest_gpgme() {
+  note_insecure 'GPGME'
+  gnupg_lib gpgme
+}
+
+latest_dirmngr() {
+  note_insecure 'dirmngr'
+  gnupg_lib dirmngr
+}
+
+latest_libgpg_error() {
+  note_insecure 'libgpg-error'
+  gnupg_lib libgpg-error
+}
+
+latest_libksba() {
+  note_insecure 'libksba'
+  gnupg_lib libksba
+}
+
+
+latest_git() {
+  fetch git http://git-scm.com/| match -o "<span class='version'>[^<]*</span>" | match -o '[0-9][0-9\.]*[0-9]' 
+}
+
+latest_apr() {
+  fetch apr https://apr.apache.org/ | match '<li>APR [^,]*, released [^<]*</li>' | match -o '[0-9][0-9\.]*[0-9]' | head -1
+}
+
+latest_apr_util() {
+  fetch apr https://apr.apache.org/ | match '<li>APR-util [^,]*, released [^<]*</li>' | match -o '[0-9][0-9\.]*[0-9]' | head -1
+}
+
+latest_serf() {
+  note_unsigned 'serf'
+  googlecode 'serf'
+}
+
+latest_neon() {
+  note_insecure 'neon'
+  fetch neon http://www.webdav.org/neon/ | match '<li>Source code: <b><a href="' | match -o '[0-9][0-9\.]*[0-9]' | head -1
+}
+
+latest_subversion() {
+  fetch subversion https://subversion.apache.org/download/ | match -o '<a href="#recommended-release">[^<]*</a>' | match -o '[0-9][0-9\.]*[0-9]'
+}
+
+latest_mercurial() {
+  pypi Mercurial
+}
+
+latest_cvs() {
+  fetch cvs https://ftp.gnu.org/non-gnu/cvs/source/stable/ | match -o '>[^<]*</a>' | match -o '[0-9][0-9\.]*[0-9]' | tail -1
+}
+
+latest_bazaar() {
+  pypi bzr
+}
+
+latest_fossil() {
+  fetch fossil https://www.fossil-scm.org/download.html | match -o '<b>Version [^<]*</b>' | match -o '[0-9][0-9\.]*[0-9]' | head -1
+}
+
+latest_openssh() {
+  note_insecure 'OpenSSH'
+  fetch openssh http://www.openssh.com/ | match -o '>OpenSSH [^<]*</a>' | match -o '[0-9][0-9\.]*[0-9]'
+}
+
+latest_rsyslog() {
+  note_insecure_and_unsigned 'rsyslog'
+  fetch rsyslog http://www.rsyslog.com/download/ | match -o 'rsyslog [0-9][0-9\.]*[0-9] \(stable\)' | match -o '[0-9][0-9\.]*[0-9]' | head -1
+}
+
+latest_syslog_ng() {
+  note_unsigned 'syslog-ng'
+  github 'balabit/syslog-ng'
+}
+
+latest_htop() {
+  note_insecure 'htop'
+  fetch htop http://htop.sourceforge.net/index.php?page=downloads | match 'The latest version is' | match -o '[0-9][0-9\.]*[0-9]'
+}
+
+latest_man_pages() {
+  fetch man_pages https://www.kernel.org/pub/linux/docs/man-pages/ | match -o '[0-9][0-9\.]*\.[0-9\.]*[0-9].tar' | match -o '[0-9][0-9\.]*\.[0-9\.]*[0-9]' | tail -1
+}
+
+latest_man_db() {
+  note_insecure 'man-db'
+  gnu_savannah 'man-db'
+}
+
+latest_rsync() {
+  fetch rsync https://rsync.samba.org/ftp/rsync/src/ | match -o '>rsync-[0-9].*\.tar\.gz</a></td>' | match -o '[0-9][0-9\.]*[0-9]' | tail -1
+}
+
+latest_ntpd() {
+  note_insecure_and_unsigned 'ntpd'
+  fetch ntpd http://www.ntp.org/ | match -o '>Stable:&nbsp;[^<]*</span>' | match -o '[0-9][0-9p\.]*[0-9]'
+}
+
+latest_openntpd() {
+  note_insecure_and_unsigned 'OpenNTPD'
+  fetch openntpd http://www.openntpd.org | match -o 'OpenNTPD [0-9][0-9\.]*[0-9] released ' | match -o '[0-9][0-9\.]*[0-9]'
+}
+
+latest_powerdns() {
+  note_unsigned 'PowerDNS'
+  github 'PowerDNS/pdns' 'auth-[0-9][0-9\.]*[0-9]*' | match -o '[0-9][0-9\.]*[0-9]'
+}
+
+latest_isc_bind_dns() {
+  fetch isc https://www.isc.org/downloads/ | match -B1 'data-placement="left">Current-Stable</a></td>' | match -o '[0-9][0-9\.]*[0-9]*-P[0-9]*' | head -1
+}
+
+latest_isc_dhcp() {
+  fetch isc https://www.isc.org/downloads/ | match -B1 'data-placement="left">Current-Stable</a></td>' | match -o '[0-9][0-9\.]*[0-9]*-P[0-9]*' | tail -1
+}
+
+latest_dhcpcd() {
+  note_insecure_and_unsigned 'dhcpcd'
+  fetch dhcpcd http://roy.marples.name/downloads/dhcpcd/ | match -o '>dhcpcd-[0-9][^<]*</a>' | match -v '(rc|beta|alpha)' | match -o '[0-9\.]*\.[0-9\.]*[0-9]' | tail -1
+}
+
+latest_openbgpd() {
+  note_insecure_and_unsigned 'OpenBGPD'
+  fetch openbgpd http://www.openbgpd.org | match -o 'OpenBGPD [0-9][0-9\.]*[0-9] released ' | match -o '[0-9][0-9\.]*[0-9]'
+}
+
+latest_haproxy() {
+  note_insecure_and_unsigned 'haproxy'
+  fetch haproxy http://haproxy.1wt.eu/ | match -B4 '<td>Stable version</td>' | match -o '>[0-9][0-9\.]*[0-9]<' | match -o '[0-9][0-9\.]*[0-9]'
+}
+
+latest_samba() {
+  fetch samba http://ftp.samba.org/pub/samba/ | match -o 'LATEST-IS-SAMBA-[0-9\.]*' | match -o '[0-9\.]*[0-9]' | head -1
+}
+
+latest_openldap() {
+  note_insecure 'OpenLDAP'
+  fetch openldap http://www.openldap.org/software/download/ | match -o 'OpenLDAP-[^<]* is currently available.' | match -o '[0-9\.]*[0-9]'
+}
+
+latest_mit_kerberos() {
+  note_insecure 'MIT Kerberos'
+  fetch mit_kerberos http://web.mit.edu/kerberos/ | match 'Current release: ' | sed 's/krb5//' | match -o '[0-9\.]*[0-9]' | tail -1
+}
+
+latest_hemidal_kerberos() {
+  note_unsigned 'hemidal'
+  github 'heimdal/heimdal' '/heimdal-[^"]*' | sed 's%/heimdal-%%'
+}
+
+# Other
+
+
+latest_truecrypt() {
+  note_insecure 'TrueCrypt'
+  fetch truecrypt http://www.truecrypt.org/downloads | match -o 'Latest Stable Version - [0-9][0-9\.a-z]*' | match -o '[0-9][0-9\.a-z]*'
+}
+
+latest_xz() {
+  note_insecure 'XZ'
+  fetch xz http://tukaani.org/xz/ | match -o '[0-9][0-9]*\.[0-9]*\.[0-9]*' | head -1
+}
+
+latest_pth() {
+  gnu 'pth'
+}
+
+latest_libevent() {
+  note_insecure 'libevent'
+  fetch libevent http://libevent.org/ | match 'stable' | match -o '[0-9]*\.[0-9]*\.[0-9][0-9]*' | head -1
+}
+
+latest_libev() {
+  note_insecure_and_unsigned 'libev'
+  fetch libev http://dist.schmorp.de/libev/ | match 'libev' | match -o '[0-9]*[0-9\.]*\.[0-9\.]*[0-9]' | head -1
+}
+
+latest_libuv() {
+  note_unsigned 'libuv'
+  github 'joyent/libuv'
+}
+# Linux
+
+latest_linux() {
+  fetch linux https://www.kernel.org/ | match -A6 'Latest Stable' | match -o '[0-9][0-9\.]*[0-9]' | head -1
+}
+
+latest_linux_longterm() {
+  fetch linux https://www.kernel.org/ | match -A6 'longterm' | match -o '[0-9][0-9\.]*[0-9]' | head -1
+}
+
+# OSes
+
+latest_mint() {
+  note_insecure_and_unsigned 'Linux Mint'
+  fetch mint http://www.linuxmint.com/download.php | match -o 'Linux
+Mint [0-9][0-9]*' | match -o '[0-9][0-9]*' | head -1
+}
+
+latest_ubuntu_lts() {
+  note_insecure 'Ubuntu LTS'
+  fetch ubuntu_lts http://www.ubuntu.com/download/server | match -o 'Ubuntu Server [0-9]*\.[0-9]*.[0-9]* LTS' | match -o '[0-9][0-9]*\.[0-9]*\.[0-9]*' | head -1
+}
+
+latest_osx() {
+  fetch osx 'https://itunes.apple.com/us/app/os-x-mavericks/id675248567?mt=12' | match -o '</span>[0-9][0-9\.]*</li>' | match -o '[0-9][0-9\.]*'
+}
+
+latest_rhel() {
+  fetch rhel https://access.redhat.com/site/support/policy/updates/errata/ | match -o '<li>[0-9][0-9\.]*' | match -o '[0-9][0-9\.]*' | tail -1
+}
+
+latest_centos() {
+  note_insecure 'centos'
+  fetch centos http://mirror.stanford.edu/yum/pub/centos/ | match -o '>[0-9][0-9\.]*/</a>' | match -o '[0-9][0-9\.]*' | sort_versions | tail -1
+}
+
+latest_arch() {
+  fetch arch https://www.archlinux.org/download/ | match 'Current Release' | match -o '[0-9][0-9\.]*'
+}
+
+
+
+latest_freebsd() {
+  RELEASE="$(fetch freebsd https://www.freebsd.org/releases/ | match -A1 'Production Releases<' | match -o '[0-9][0-9]*\.[0-9]*')"
+  LATEST_URL="http://update.freebsd.org/$RELEASE-RELEASE/amd64/latest.ssl"
+  LATEST_KEY_URL="http://update.freebsd.org/$RELEASE-RELEASE/amd64/pub.ssl"
+  TAG="$(fetch 'freebsd/latest.ssl' "$LATEST_URL" | openssl rsautl -verify -pubin -inkey <(fetch 'freebsd/pub.ssl' "$LATEST_KEY_URL") 2>/dev/null | cut -d'|' -f4)"
+  echo "$RELEASE-RELEASE-p$TAG"
+}
+
+latest_netbsd() {
+  fetch netbsd https://www.netbsd.org/releases/ | match 'the latest release' | match -o '[0-9][0-9\.]*' | head -1
+}
+
+latest_openbsd() {
+  note_insecure 'openbsd'
+  fetch openbsd http://www.openbsd.org/ | match 'The current release is' | match -o '[0-9][0-9]*\.[0-9][0-9]*' | head -1
+}
+
+latest_kali() {
+  note_insecure 'Kali'
+  fetch kali http://www.kali.org/kali-linux-releases/ | match -o 'Kali [0-9][0-9]*\.[0-9\.]*[0-9]' | match -o '[0-9][0-9]*\.[0-9\.]*[0-9]' | head -1
+}
+
+latest_pfsense() {
+  note_insecure_and_unsigned 'pfSense'
+  fetch pfsense 'http://www.pfsense.org/index.php@option=com_content&task=view&id=43&Itemid=44.html' | match -o '<h3>Stable Version</h3><h4>[^<]* release<br />' | match -o '[0-9][0-9]*\.[0-9\.]*[0-9]'
+}
+
+# IDEs / editors
+
+latest_eclipse() {
+  note_unsigned 'Eclipse'
+  fetch eclipse https://www.eclipse.org/downloads/ | match -o 'Eclipse Standard [0-9]*\.[0-9]*\.[0-9]*' | sed 's/Eclipse Standard //' | head -1
+}
+
+latest_emacs() {
+  note_insecure 'Emacs'
+  fetch emacs http://ftpmirror.gnu.org/emacs/ | match -o 'emacs-[0-9]*\.[0-9a-z]*' | tail -1 | sed 's/emacs-//'
+}
+
+latest_vim() {
+  note_insecure_and_unsigned 'Vim'
+  fetch vim http://ftp.vim.org/pub/vim/unix/ | match version | head -1 | match -o '[0-9]\.[0-9]' | head -1
+}
+
+latest_xcode() {
+  fetch xcode 'https://itunes.apple.com/us/app/xcode/id497799835?ls=1&mt=12' | match -o '</span>[0-9][0-9\.]*</li>' | match -o '[0-9][0-9\.]*'
+}
+
+
+# languages
+
+latest_clojure() {
+  github 'clojure/clojure'
+}
+
+latest_erlang() {
+  note_insecure_and_unsigned 'Erlang'
+  fetch erlang http://www.erlang.org/download.html | match 'title' | match -o 'R[0-9][0-9][A-Z][0-9]*'
+}
+
+latest_gcc() {
+  note_insecure 'GCC'
+  fetch gcc http://gcc.gnu.org/releases.html | match -o 'GCC [0-9]\.[0-9]\.[0-9]' | sed 's/GCC //' | head -1
+}
+
+latest_go() {
+  note_unsigned 'Go'
+  fetch go http://golang.org/dl/ | match 'toggleVisible' | match -o 'go[0-9]\.[0-9\.]*[0-9]' | head -1 | match -o '[0-9]\.[0-9\.]*[0-9]'
+}
+
+latest_jdk6() {
+  note_insecure_and_unsigned 'Oracle JDK 6.x'
+  fetch jdk6 http://www.oracle.com/technetwork/java/javasebusiness/downloads/java-archive-downloads-javase6-419409.html | grep -o '6u[0-9]*-b[0-9]*' | head -1
+}
+
+latest_jdk7() {
+  note_insecure_and_unsigned 'Oracle JDK 7.x'
+  fetch jdk7 http://www.oracle.com/technetwork/java/javase/downloads/jdk7-downloads-1880260.html | match -o '7u[0-9]*-b[0-9]*' | head -1
+}
+
+latest_jdk8() {
+  note_unsigned 'Oracle JDK 8.x (Beta)'
+  fetch jdk8 https://jdk8.java.net/download.html | match -o '<font size="4">.*</font>' | sed 's/<[^>]*>//g'
+}
+
+latest_llvm() {
+  note_insecure 'LLVM'
+  fetch llvm http://llvm.org/releases/ | match -A1 RELEASES | match -o '[0-9][0-9]*\.[0-9]*'
+}
+
+latest_php() {
+  note_insecure 'php'
+  fetch php http://php.net/downloads.php | match -A10 '>Current Stable</span>' | match -o '[0-9][0-9]*\.[0-9][0-9]*.[0-9]*' | head -1
+}
+
+latest_lua() {
+  note_insecure_and_unsigned 'lua'
+  fetch lua http://www.lua.org/ftp/ | match '>[^<]*</A>' | match -o '[0-9][0-9]*\.[0-9][0-9]*.[0-9]*' | head -1
+}
+
+latest_node() {
+  note_insecure 'Node.JS' 
+  fetch node https://semver.io/node/stable
+}
+
+latest_perl5() {
+  note_insecure_and_unsigned 'Perl'
+  fetch perl5 http://www.perl.org/get.html | match 'currently' | match -o '[0-9]*\.[0-9]*.[0-9]*' | head -1
+}
+
+latest_python2() {
+  fetch python2 https://www.python.org/download/ | match -A3 'The current production versions are' | match -o 'Python 2\.[0-9]\.[0-9]' | match -o '2\.[0-9]\.[0-9]'
+}
+
+latest_python3() {
+  fetch python3 https://www.python.org/download/ | match -A1 'The current production versions are' | match -o 'Python 3\.[0-9]\.[0-9]' | match -o '3\.[0-9]\.[0-9]'
+}
+
+latest_ruby() {
+  note_unsigned 'Ruby'
+  fetch ruby https://www.ruby-lang.org/en/downloads/ | match 'current stable' | match -o '[0-9]\.[0-9\.p]*[0-9]'
+}
+
+latest_jruby() {
+  note_unsigned 'JRuby'
+  github 'jruby/jruby'
+}
+
+latest_chruby() {
+  note_unsigned 'chruby'
+  github 'postmodern/chruby'
+}
+
+latest_ruby_install() {
+  note_unsigned 'ruby-install'
+  github 'postmodern/ruby-install'
+}
+
+latest_scala() {
+  note_insecure_and_unsigned 'Scala'
+  fetch scala http://www.scala-lang.org/download/ | match 'Download Scala' | match -o '[0-9]*\.[0-9]*\.[0-9]*'
+}
+
+# frameworks
+
+latest_rails() {
+  note_unsigned 'Rails'
+  github 'rails/rails' '4\.[0-9]*\.[0-9]*'
+}
+
+latest_sinatra() {
+  note_unsigned 'Sinatra'
+  github 'sinatra/sinatra' 
+}
+
+latest_bourbon() {
+  note_unsigned 'Bourbon'
+  github 'thoughtbot/bourbon'
+}
+
+latest_express() {
+  note_unsigned 'express'
+  github 'visionmedia/express'
+}
+
+latest_django() {
+  note_unsigned 'Django'
+  fetch django https://www.djangoproject.com/ | match 'Latest release' | match -o '[0-9][0-9\.]*[0-9]'
+}
+
+latest_flask() {
+  note_unsigned 'Flask'
+  github 'mitsuhiko/flask'
+}
+
+latest_express() {
+  note_unsigned 'express'
+  github 'visionmedia/express'
+}
+
+latest_jquery1() {
+  note_unsigned 'jQuery 1.x.x'
+  github 'jquery/jquery' '1\.[0-9]*\.[0-9]*'
+}
+
+latest_jquery2() {
+  note_unsigned 'jQuery 2.x.x'
+  github 'jquery/jquery' '2\.[0-9]*\.[0-9]*'
+}
+
+latest_jquery_ui() {
+  note_unsigned 'jQuery UI'
+  github 'jquery/jquery-ui'
+}
+
+latest_jquery_mobile() {
+  note_unsigned 'jQuery Mobile'
+  github 'jquery/jquery-mobile'
+}
+
+latest_angular() {
+  note_unsigned 'Angular'
+  npm 'angular'
+}
+
+latest_backbone() {
+  note_unsigned 'Backbone'
+  npm 'backbone'
+}
+
+latest_underscore() {
+  note_unsigned 'underscore'
+  npm 'underscore'
+}
+
+latest_grunt() {
+  note_unsigned 'grunt'
+  npm 'grunt'
+}
+
+latest_bower() {
+  note_unsigned 'bower'
+  npm 'bower'
+}
+
+# apps
+
+latest_mediawiki() {
+  note_insecure 'mediawiki'
+  fetch mediawiki https://www.mediawiki.org/wiki/Download | match -o '>Download MediaWiki [^<]*</a></span>' | match -o '[0-9]*\.[0-9\.]*[0-9]'
+}
+
+latest_dokuwiki() {
+  note_insecure_and_unsigned 'dokuwiki'
+  fetch dokuwiki http://download.dokuwiki.org/ | match -A2 'value="stable"' | match -o '[0-9]*-[0-9]*-[0-9a-z]*'
+}
+
+latest_redmine() {
+  note_insecure 'redmine'
+  fetch redmine http://www.redmine.org/projects/redmine/wiki/Download | match -o '<li>[^:<]*:' | match -o '[0-9]*\.[0-9\.]*[0-9]' | head -1
+}
+
+latest_plone() {
+  fetch plone https://plone.org/products/plone/releases | match -A10 '<h2>Stable Releases</h2>' | match -o '[0-9]*\.[0-9\.]*[0-9]' | head -1
+}
+
+latest_trac() {
+  note_insecure 'trac'
+  fetch trac http://trac.edgewall.org/wiki/TracDownload | match -o 'Latest Stable Release [^<]*</a>' | match -o '[0-9]*\.[0-9]*\.[0-9][0-9]*' | head -1
+}
+
+latest_gitlab() {
+  note_unsigned 'gitlabhq'
+  github 'gitlabhq/gitlabhq'
+}
+
+latest_hubot() {
+  note_unsigned 'hubot'
+  github 'github/hubot'
+}
+
+latest_jenkins() {
+  fetch jenkins http://mirrors.jenkins-ci.org/war/ | match -o '[0-9]*\.[0-9\.]*[0-9]' | tail -2 | head -1
+}
+
+latest_confluence() {
+  fetch confluence https://my.atlassian.com/download/feeds/current/confluence.json | match -o '[0-9]*\.[0-9\.]*\.[0-9][0-9]*' | head -1
+}
+
+latest_stash() {
+  fetch stash https://my.atlassian.com/download/feeds/current/stash.json | match -o '[0-9]*\.[0-9\.]*\.[0-9][0-9]*' | head -1
+}
+
+latest_jira() {
+  fetch jira https://my.atlassian.com/download/feeds/current/jira.json | match -o '[0-9]*\.[0-9\.]*\.[0-9][0-9]*' | head -1
+}
+
+latest_bamboo() {
+  fetch bamboo https://my.atlassian.com/download/feeds/current/bamboo.json | match -o '[0-9]*\.[0-9\.]*[0-9]' | head -1
+}
+
+latest_crowd() {
+  fetch crowd https://my.atlassian.com/download/feeds/current/crowd.json | match -o '[0-9]*\.[0-9\.]*[0-9]' | head -1
+}
+
+latest_fisheye() {
+  fetch fisheye https://my.atlassian.com/download/feeds/current/fisheye.json | match -o '[0-9]*\.[0-9\.]*\.[0-9][0-9]*' | head -1
+}
+
+# servers
+
+latest_nginx() {
+  note_insecure 'nginx'
+  fetch nginx http://nginx.org/en/download.html | match -o 'Stable version.*' | match -o 'nginx-[0-9]\.[0-9]\.[0-9]*' | sed 's/nginx-//' | head -1
+}
+
+latest_apache_httpd() {
+  fetch apache_httpd https://httpd.apache.org/download.cgi | match -A2 'Stable Release - Latest Version:' | match -o '[0-9]\.[0-9]\.[0-9]'
+}
+
+latest_memcache() {
+  note_unsigned 'memcached'
+  fetch memecache https://code.google.com/p/memcached/downloads/list | match -o 'Stable Release [0-9]\.[0-9]*\.[0-9]*' | sed 's/Stable Release //' | head -1
+}
+
+latest_monogo() {
+  note_unsigned 'MongoDB'
+  fetch mongo https://www.mongodb.org/downloads | match 'Production Release' | match -o '[0-9]*\.[0-9]*\.[0-9]*'
+}
+
+# brokee
+latest_mysql() {
+  fetch mysql https://dev.mysql.com/downloads/mysql/ | match 'MySQL Community Server [0-9]\.[0-9]*\.[0-9]*' | match -o '[0-9]\.[0-9]*\.[0-9]*'
+}
+
+latest_mariadb() {
+  fetch mariadb https://downloads.mariadb.org/ | match -o 'MariaDB [0-9\.]* is the current' | match -o '[0-9][0-9\.]*[0-9]'
+}
+
+latest_percona() {
+  note_insecure 'percona'
+  fetch percona http://www.percona.com/downloads/ | match -o '>Percona Server [^<]*</a></div>' | match -o '[0-9][0-9\.]*[0-9]'
+}
+
+latest_unixodbc() {
+  note_insecure 'unixODBC'
+  fetch unixodbc http://www.unixodbc.org/download.html | match -o '>unixODBC-[0-9\.]*.tar.gz</a>'  | match -o '[0-9][0-9\.]*[0-9]'
+}
+
+latest_postgres() {
+  note_unsigned 'PostgreSQL'
+  fetch postgres http://ftp.postgresql.org/pub/source/ | match -o 'v[0-9]*\.[0-9]*\.[0-9]*' | tail -1 | sed 's/v//'
+}
+
+latest_couchbase() {
+  note_insecure_and_unsigned 'couchbase'
+  fetch couchbase http://www.couchbase.com/downloads-all | match 'class="cb-download" data-version="' | grep -o '[0-9][0-9\.]*[0-9]' | head -1
+}
+
+latest_leveldb() {
+  googlecode 'leveldb'
+}
+
+latest_riak() {
+  note_unsigned 'Riak'
+  github basho/riak
+}
+
+latest_cassandra() {
+  fetch cassandra https://cassandra.apache.org/ | match 'The latest release is' | match -o '[0-9][0-9\.]*[0-9]'
+}
+
+latest_redis() {
+  note_insecure_and_unsigned 'Redis'
+  fetch redis http://redis.io/download | match -A8 Stable | match -o 'redis-[0-9]*\.[0-9]*\.[0-9]*' | sed 's/redis-//'
+}
+
+latest_sqlite() {
+  note_unsigned 'SQLite'
+  fetch sqlite https://sqlite.org/index.html | match -o 'Version [0-9]*\.[0-9]*\.[0-9]*' | sed 's/Version //'
+}
+
+latest_bdb() {
+  note_insecure_and_unsigned 'Oracle Berkeley DB'
+  fetch bdb http://www.oracle.com/technetwork/products/berkeleydb/downloads/index.html | match -o '">Berkeley DB [0-9\.]*.tar.gz</a>' | match -o '[0-9\.]*[0-9]'
+}
+
+latest_idapro() {
+  note_unsigned 'IDA Pro'
+  fetch idapro https://www.hex-rays.com/updida.shtml | match -A2 'IDA:' | match -o '[0-9\.]*[0-9]'
+}
+
+latest_sophoside() {
+  note_insecure_and_unsigned 'Sophos AV IDE definitions'
+  fetch sophoside http://www.sophos.com/downloads/ide/ | match -A1 '<td class="highlight">' | match -o '[0-9]* \([0-9\.]*\)'
+}
+
+
+#################
+
+parameters() {
+  grep -o 'latest_[a-z0-9_]*' "$0" | sed 's/latest_//g;/^$/d' | sort
+}
+
+help() {
+  cat << HELP
+
+$0 [arguments] {package}+
+
+   -h   help
+
+   -b   bare; dont print package names
+   -d   debug information
+   -s   silence warnings
+   -o   offline operation
+   -C   dont cache anything
+
+   output filters (default: space delimited)
+
+   -j   json
+   -H   html
+   -x   xml
+   -t   toml
+   -y   yaml
+
+  Valid packages ('all' to list all):
+HELP
+  parameters | sed 's/^/    /g'
+  echo
+}
+
+_run() {
+  test -z "$OFFLINE" && PREVIOUS="$( ( OFFLINE=1 SILENT=1; latest_$PACKAGE ) )"
+  CURRENT="$(latest_$PACKAGE)"
+  if [ -n "$CURRENT" ]; then
+    UPDATED=''
+    if [ -z "$DISABLE_NEW" ] && [ -n "$PREVIOUS" ] && [ "$CURRENT" != "$PREVIOUS" ]; then 
+      UPDATED=' *'
+      echo 1 > "$ANY_UPDATED_FILE"
+    else
+      UPDATED=''
+    fi
+    echo "$CURRENT$UPDATED"
+  fi
+}
+
+run() {
+  PACKAGE="$1"
+  if ! parameters | grep -q "^$PACKAGE$"; then
+    PACKAGE=`echo $PACKAGE | tr '-' '_'`
+    if ! parameters | grep -q "^$PACKAGE$"; then
+      die "unknown package: $PACKAGE"
+    fi
+  fi
+  RESULT="$(_run)"
+  if [ -n "$RESULT" ]; then
+    if [ -z "$BARE" ]; then
+      echo "$PACKAGE $RESULT"
+    else
+      echo "$RESULT"
+    fi
+  fi
+}
+
+# code execution
+
+json() {
+  echo "{"
+  sed 's/\([^ ]*\) \(.*\)/"\1": "\2"/g;$!s/$/,/g'
+  echo "}"
+}
+
+html() {
+  echo '<!-- generated by latest.sh https://gist.github.com/steakknife/7623744 -->'
+  echo "<table>"
+  echo "<thead><tr><td>Package</td><td>Version</td></tr></thead>"
+  sed 's%\([^ ]*\) \(.*\)%<tr><td>\1</td><td>\2</td></tr>%g'
+  echo "</table>"
+}
+
+toml() {
+  echo '# generated by latest.sh https://gist.github.com/steakknife/7623744'
+  sed 's%\([^ ]*\) \(.*\)%\1 = "\2"%g'
+}
+
+xml() {
+  echo '<?xml version="1.0" encoding="UTF-8"?>'
+  echo '<!-- generated by latest.sh https://gist.github.com/steakknife/7623744 -->'
+  echo "<packages>"
+  sed 's%\([^ ]*\) \(.*\)%<package><name>\1</name><version>\2</version></package>%g'
+  echo "</packages>"
+}
+
+yaml() {
+  echo '---'
+  echo '# generated by latest.sh https://gist.github.com/steakknife/7623744'
+  sed 's%\([^ ]*\) \(.*\)%\1: \2%g'
+}
+
+filters() {
+  if [ -n "$JSON" ]; then
+    json
+  elif [ -n "$HTML" ]; then
+    html
+  elif [ -n "$TOML" ]; then
+    toml
+  elif [ -n "$YAML" ]; then
+    yaml
+  elif [ -n "$XML" ]; then
+    xml
+  else
+    cat
+  fi
+}
+
+main() {
+  if [ -n "$ALL" ]; then
+    NON_ARGS="$NON_ARGS `parameters`"
+  fi
+
+  for PARAM in $NON_ARGS; do
+    run "$PARAM"
+  done
+}
+
+# preflight checks
+
+has_command curl || die "curl is missing"
+
+NON_ARGS=""
+
+if [ -z "$1" ]; then
+  HELP=1
+fi
+
+for ARGV in "$@"; do
+  case "$ARGV" in
+  -d|--debug)              DEBUG=1   ;;
+  -C|--disable-cache)      DISABLE_CACHE=1 ;;
+  -c|--cache-debug)        DEBUG_CACHE=1 ;;
+  -N|--disable-new)        DISABLE_NEW=1 ;;
+  -b|--bare)               BARE=1    ;;
+  -h|-\?|help|--help)      HELP=1    ;;
+  -o|--offline)            OFFLINE=1 ;;
+  -s|-q|--silent|--quiet)  SILENT=1  ;;
+  -H|--html)               HTML=1    ;;
+  -j|--json)               JSON=1    ;;
+  -t|--toml)               TOML=1    ;;
+  -x|--xml)                XML=1     ;;
+  -y|--yaml)               YAML=1    ;;
+  -*)                      die "Unknown option $ARGV" ;;
+  all)                     ALL=1     ;;
+  broken)                  BROKEN=1; ALL=1 ;;
+  uncachable)              UNCACHABLE=1; ALL=1 ;; # ?
+  *)                       NON_ARGS="$NON_ARGS $ARGV"
+  esac
+done
+
+if [ -n "$DEBUG" ]; then
+  set -x
+fi
+
+ANY_UPDATED_FILE="$(mktemp -t XXXXXXX)"
+CLEAN_FILES="$CLEAN_FILES \"$ANY_UPDATED_FILE\""
+
+if [ -n "$DEBUG_CACHE" ]; then
+  DEBUG_CACHE_CURRENT_FILE="$(mktemp -t XXXXXXX)"
+  echo 0 > "$DEBUG_CACHE_CURRENT_FILE"
+  DEBUG_CACHE_UNKNOWN_FILE="$(mktemp -t XXXXXXX)"
+  echo 0 > "$DEBUG_CACHE_UNKNOWN_FILE"
+  CLEAN_FILES="$CLEAN_FILES \"$DEBUG_CACHE_CURRENT_FILE\" \"$DEBUG_CACHE_UNKNOWN_FILE\""
+fi
+
+if [ -n "$HELP" ]; then
+  help >&2
+  exit 1
+fi
+
+
+if [ -n "$BROKEN" ]; then
+  main | filters | grep -v ' ..*'
+else
+  main | filters
+fi
+
+grep -q '1' "$ANY_UPDATED_FILE" && warn "  * Updated since last checked"
+
+if [ -n "$DEBUG_CACHE" ]; then
+  stderr "$(cat $DEBUG_CACHE_CURRENT_FILE) cached package(s)"
+  stderr "$(cat $DEBUG_CACHE_UNKNOWN_FILE) package(s) required a full download (outdated or uncachable)"
+fi

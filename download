@@ -1,0 +1,349 @@
+#!/bin/sh
+#
+# calculates filename from url, or -o to specify filename
+#
+# Secure:
+#
+#    download url hash
+#    download url url.gpg keyid
+#
+# Insecure: 
+#
+#    download url
+
+set -e
+test "$DEBUG" = 1 && set -x
+
+CLEAN_FILES=''
+
+trap 'RESULT=$? ; test -n "$CLEAN_FILES" && rm -rf $CLEAN_FILES ; exit $RESULT' ERR INT QUIT TERM EXIT
+
+help() {
+  cat << 'HELP'
+  usage: download [options...] url [ hash | signature key ]
+
+
+      options:
+
+          --silent                 Be quiet, only result will be exit code
+          -s
+
+          --output   filename      Save to filename instead of name parsed from url
+          -o
+
+          
+          hash  hexadecimal form must of length 32 (md5),    40 (sha1),    56 (sha224), 
+                                                64 (sha256), 96 (sha384), 128 (sha512)
+
+                filename whos contents is the hash
+                url whos downloaded contents is the hash
+                'URL.sha256' combines the URL argument plus '.sha256' and downloads that
+
+
+          signature   either a filename or url that contains the GPG signature of the downloaded file
+                      may also be 'URL.asc' where URL is replaced by the URL argument plus .asc'
+
+          key         either a filename, url or key id that contains the GPG key for the signature
+                      may also be 'URL.key' where URL is replaced by the URL argument plus .key'.
+                     
+HELP
+  exit 1
+}
+
+warn() {
+  if [ -z "$SILENT" ] ; then
+    echo "$@" >&2
+  fi
+}
+
+die() {
+  warn "$@"
+  exit 1
+}
+
+has_command() {
+  which "$@" >/dev/null 2>&1
+}
+
+require_command() {
+  has_command "$1" || die "Missing required command $@"
+}
+
+is_secure_url() {
+  echo "$1" | grep -q '^https:'
+}
+
+require_secure_url() {
+  is_secure_url "$1" || die "$1 is an insecure URL, which is not allowed for $2"
+}
+
+## curl's ftp client is horribly broken, so use ftp that works
+_ftp() {
+  require_command ftp
+  ftp -p "$@"
+}
+
+_curl() {
+  if has_command curl; then
+    if [ -n "$SILENT" ]; then
+      CURL_OPTIONS="-s $CURL_OPTIONS"
+    fi
+    curl $CURL_OPTIONS -L "$@"
+  elif has_command wget; then
+    if [ -n "$SILENT" ]; then
+      WGET_OPTIONS="-q $WGET_OPTIONS"
+    fi
+    wget $WGET_OPTIONS "$@"
+  else
+    die 'Requires curl or wget'
+  fi
+}
+
+# handle_ftp host.com[:port]/path/to/file.ext
+# handle_ftp host.com[:port]/path/to/file.ext newfile.ext
+handle_ftp() {
+  if [ -n "$2" ]; then
+    _ftp "ftp://anonymous@whatever%40example.com$1" -o "$2"
+  else
+    _ftp "ftp://anonymous@whatever%40example.com$1"
+  fi
+}
+
+# handle_other url://host.com/file.ext
+# handle_other url://host.com/file.ext newfile.ext
+handle_other() {
+  if [ -n "$2" ]; then
+    _curl "$1" -o "$2"
+  else
+    _curl "$1"
+  fi
+}
+
+# download url://host.com/file.ext
+# download url://host.com/file.ext newfile.ext
+download() {
+   case "$1" in 
+     [fF][tT][pP]) handle_ftp "$@" ;;
+     *) handle_other "$@" ;;
+   esac
+}
+
+duplicate() {
+  X="$2"
+  while [[ "$X" != 0 ]]; do
+    printf "$1"
+    X=$(($X - 1))
+  done
+}
+
+is_url() {
+  echo "$1" | grep -q '[a-zA-Z0-9][a-zA-Z0-9]*://..*'
+}
+
+is_file() {
+  test -e "$1"
+}
+
+parse_url() {
+  if is_url "$1"; then
+    URL="$1"
+  else
+    die "'$1' is not a valid URL"
+  fi
+}
+
+
+_gpg() {
+  require_command gpg
+  if [ -n "$SILENT" ]; then
+    gpg --no-tty $GPG_OPTIONS "$@" >/dev/null 2>&1
+  else
+    gpg $GPG_OPTIONS "$@"
+  fi
+}
+
+recv_gpg_key() {
+  RESULT_FILE="$(mktemp -t XXXXXX)"
+  CLEAN_FILES="$CLEAN_FILES '$RESULT_FILE'"
+  echo 1 > "$RESULT_FILE"
+  while read KEYSERVER; do
+    if _gpg --keyserver $KEYSERVER --recv-keys "$1" ; then
+      echo 0 > "$RESULT_FILE"
+      break
+    fi  
+  done
+  RESULT="$(cat "$RESULT_FILE")"
+  return $RESULT
+}
+
+
+# check_signature /path/to/filename
+check_signature() {
+
+  warn "Checking signature of $1"
+
+  TEMP_DIR="$(mktemp -d -t XXXXXX)"
+  CLEAN_FILES="$CLEAN_FILES '$TEMP_DIR'"
+
+  GPG_OPTIONS="$GPG_OPTIONS --utf8-strings --batch --homedir "$TEMP_DIR""
+
+  if is_file "$SIGNING_KEY"; then
+    _gpg --import "$SIGNING_KEY"
+  else
+    recv_gpg_key "$SIGNING_KEY" << 'KEY_SERVERS' || die "Unable to get gpg key $SIGNING_KEY"
+  http://pgp.mit.edu
+  http://keyserver.pgp.com
+  http://keyserver.ubuntu.com
+  hkp://pgp.mit.edu
+  hkp://keyserver.ubuntu.com
+KEY_SERVERS
+  fi
+  _gpg --verify "$SIGNATURE" "$1"
+}
+
+
+download_url_to_file_or_echo() {
+  if is_url "$1"; then
+    test -n "$2" && warn "$2 $1"
+    DOWNLOAD2_TEMP_FILE="$(mktemp -t XXXXXXX)"
+    CLEAN_FILES="$CLEAN_FILES '$DOWNLOAD2_TEMP_FILE'"
+    download "$1" "$DOWNLOAD2_TEMP_FILE" || die "Unable to download $1"
+    echo "$DOWNLOAD2_TEMP_FILE"
+  else
+    echo "$1"
+  fi
+}
+
+download_url_to_stdin_or_echo() {
+  if is_url "$1"; then
+    require_secure_url "$1" "$2"
+    DOWNLOAD_TEMP_FILE="$(mktemp -t XXXXXXX)"
+    CLEAN_FILES="$CLEAN_FILES '$DOWNLOAD_TEMP_FILE'"
+    download "$1" "$DOWNLOAD_TEMP_FILE" || die "Unable to download $1"
+    cat "$DOWNLOAD_TEMP_FILE"
+  else
+    echo "$1"
+  fi
+}
+
+parse_signature_and_signing_key() {
+  SIGNATURE="$1"
+  if [ -e "$SIGNATURE" ]; then
+    :;
+  else
+    if echo "$SIGNATURE" | grep -qi 'url\.'; then
+      SIGNATURE="$(echo "$SIGNATURE" | sed "s\"^[uU][rR][lL]\"$URL\"")"
+    fi
+    SIGNATURE="$(download_url_to_file_or_echo "$SIGNATURE" 'Downloading signature')"
+    if [ -z "$SIGNATURE" ]; then
+      die "Signature $SIGNATURE is invalid."
+    fi
+  fi
+
+  SIGNING_KEY="$2"
+  if [ -e "$SIGNING_KEY" ]; then
+    :;
+  else
+    if echo "$SIGNING_KEY" | grep -qi 'url\.'; then
+      SIGNING_KEY="$(echo "$SIGNING_KEY" | sed "s\"^[uU][rR][lL]\"$URL\"")"
+    fi
+    SIGNING_KEY="$(download_url_to_file_or_echo "$SIGNING_KEY" 'Downloading signing key')"
+    if [ -z "$SIGNING_KEY" ]; then
+      die "Signing fingerpring, key or key id '$SIGNING_KEY' is invalid."
+    fi
+  fi
+}
+
+# hash /path/to/filename
+hash() {
+  warn "Hashing $1"
+  require_command openssl
+  openssl dgst -$HASH_ALGO "$1" | grep -q -- "$HASH\$"
+}
+
+# parse_hash abce01231312313123
+parse_hash() {
+  HASH="$(download_url_to_stdin_or_echo "$1" 'hash')"
+  HASH="$(echo $HASH | tr '[A-F]' '[a-f]')"
+  case "$HASH" in 
+    `duplicate '[0-9a-f]' 128`) HASH="$1" ; HASH_ALGO='sha512' ;;
+    `duplicate '[0-9a-f]' 96`) HASH="$1" ; HASH_ALGO='sha384' ;;
+    `duplicate '[0-9a-f]' 64`) HASH="$1" ; HASH_ALGO='sha256' ;;
+    `duplicate '[0-9a-f]' 56`) HASH="$1" ; HASH_ALGO='sha224' ;;
+    `duplicate '[0-9a-f]' 40`) HASH="$1" ; HASH_ALGO='sha1' ;;
+    `duplicate '[0-9a-f]' 32`) HASH="$1" ; HASH_ALGO='md5' ;;
+    *) die "Hash '$HASH' is wrong length or not hexadecimal"
+  esac
+}
+
+if [ -z "$1" ]; then
+  help
+fi
+
+X=1
+while [[ "$X" -le "$#" ]]; do
+  ARG="$(eval echo \$$X)"
+  case "$ARG" in  
+  -s|--silent) SILENT=1 ;;
+  -o|--output) X=$(($X+1)); FILENAME="$(eval echo \$$X)" ;;
+  esac
+  X=$(($X+1))
+done 
+
+while [[ "$#" -gt 0 ]]; do
+  case "$1" in
+  -s|--silent) ;;
+  -o|--output) shift ;;
+  *)
+    NON_ARGS="$NON_ARGS '$1'"
+      if [ -z "$URL" ]; then
+        parse_url "$1"
+      elif [ -z "$HASH" ] && [ -z "$SIGNATURE" ]; then
+        if [ -n "$2" ]; then
+          parse_signature_and_signing_key "$1" "$2" 
+          shift
+        else
+          parse_hash "$1"
+        fi
+      else
+        die "Unexpected arguments $@"
+      fi
+  esac
+
+  shift
+done
+
+
+test -z "$FILENAME" && FILENAME="$(basename "$URL")"
+
+if [ -e "$FILENAME" ]; then
+  if [ -n "$HASH" ]; then
+    if hash "$FILENAME"; then
+      warn "$FILENAME is already downloaded"
+      exit 0
+    else
+      rm -f "$FILENAME"
+    fi
+  fi
+  if [ -n "$SIGNATURE" ]; then
+    if check_signature "$FILENAME"; then
+      warn "$FILENAME is already downloaded"
+      exit 0
+    else
+      rm -f "$FILENAME"
+    fi
+  fi
+fi
+
+TEMP_FILE="$(mktemp -t XXXXXX)"
+CLEAN_FILES="$CLEAN_FILES '$TEMP_FILE'"
+warn "Downloading $URL"
+download "$URL" "$TEMP_FILE" || die "Unable to download $URL"
+if [ -n "$HASH" ]; then
+  hash "$TEMP_FILE"
+fi
+if [ -n "$SIGNATURE" ]; then
+  check_signature "$TEMP_FILE"
+fi
+mv "$TEMP_FILE" "$FILENAME"
+warn "Downloaded $URL -> $FILENAME"

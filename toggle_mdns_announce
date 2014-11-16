@@ -1,0 +1,38 @@
+#!/bin/sh
+set -e
+
+case "$(sw_vers -productVersion)" in
+10.[6-9]) # <= Mountain Lion 
+  if defaults read /System/Library/LaunchDaemons/com.apple.mDNSResponder ProgramArguments | grep -q Multicast; then
+    sudo /usr/libexec/PlistBuddy -c 'Delete :ProgramArguments:2' /System/Library/LaunchDaemons/com.apple.mDNSResponder.plist
+    VISIBLE=1
+  else
+    sudo /usr/libexec/PlistBuddy -c 'Add :ProgramArguments: string -NoMulticastAdvertisements' /System/Library/LaunchDaemons/com.apple.mDNSResponder.plist
+    VISIBLE=0
+  fi
+  sudo launchctl unload /System/Library/LaunchDaemons/com.apple.mDNSResponder.plist
+  sudo launchctl load /System/Library/LaunchDaemons/com.apple.mDNSResponder.plist
+  ;;
+
+10.10) # Yosemite only
+  if defaults read /System/Library/LaunchDaemons/com.apple.discoveryd ProgramArguments | grep -q no-multicast; then
+    sudo /usr/libexec/PlistBuddy -c 'Delete :ProgramArguments:9' /System/Library/LaunchDaemons/com.apple.discoveryd.plist
+    VISIBLE=1
+  else
+    sudo /usr/libexec/PlistBuddy -c 'Add :ProgramArguments: string --no-multicast' /System/Library/LaunchDaemons/com.apple.discoveryd.plist
+    VISIBLE=0
+  fi
+  sudo launchctl unload /System/Library/LaunchDaemons/com.apple.discoveryd.plist
+  sudo launchctl load /System/Library/LaunchDaemons/com.apple.discoveryd.plist
+  ;;
+
+*)
+  echo 'cannot toggle mdns annoucements: unknown platform!' >&2
+  exit 1
+esac
+
+if [ "$VISIBLE" = 1 ]; then
+  echo 'This computer is now VISIBLE to other computers (multicast dns (mdns) annoucements enabled)'
+else
+  echo 'This computer is now INVISIBLE to other computers (multicast dns (mdns) annoucements disabled)'
+fi

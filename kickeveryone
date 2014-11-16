@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -m
+iface=en1
+
+original_ip=`ifconfig $iface inet | awk '/inet/{print$2}'`
+
+new_ip() {
+  echo $original_ip | sed 's/\.[0-9]*$//' | tr '\n' '\0' ; echo .$1
+}
+
+sudo true
+echo "orig=$original_ip"
+
+trap 'pkill -9 -f "sudo ping" >/dev/null 2>&1' INT QUIT ERR EXIT
+
+for octect in $(seq 0 255); do
+  ip="`new_ip $octect`"
+  echo Starting $ip ...
+  sudo ping -f $ip &
+done

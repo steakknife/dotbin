@@ -1,0 +1,67 @@
+#!/bin/sh
+set -e
+
+patchdir="$1/amtlib.framework"
+dest="$2"
+
+
+if [ ! -d "$dest" ]
+then
+    echo "Error dest app dir $dest doest not exist"
+    exit 1
+fi
+
+if [ ! -d "$patchdir" ]
+then
+    echo "Error $patchdir does not exist !"
+    exit 1
+fi
+    
+fix_app() {
+    local    dir="$2/Contents/Frameworks/amtlib.framework"
+    local bakdir="${dir}bakbak"
+
+    if [ ! -d "$dir" ]
+    then
+        echo "Skipping an app in $1" 
+        return
+    fi
+
+    if [ -d "$bakdir" ]
+    then
+        echo "Already patched $1"
+        retun
+    fi
+
+    mv "$dir" "$bakdir" || sudo mv "$dir" "$bakdir"
+
+    rsync -a "$patchdir/" "$dir" || sudo rsync -a "$patchdir/" "$dir"
+
+    echo "Patched an app in $1"
+}
+
+fix() {
+    local  appdir="$dest/Adobe $1 ${2:-CS6}"
+
+    ls "$appdir/"*.app | while read app
+    do
+        fix_app "$1" "$appdir/$app"
+    done
+}
+
+fix 'After Effects'
+fix 'Audition'
+fix 'Bridge'
+fix 'Dreamweaver'
+fix 'Encore'
+fix 'Extension Manager'
+fix 'Fireworks'
+fix 'Flash Builder' '4.6'
+fix 'Flash'
+fix 'Illustrator'
+fix 'InDesign'
+fix 'Media Encoder'
+fix 'Photoshop'
+fix 'Prelude'
+fix 'Premiere Pro'
+fix 'SpeedGrade'

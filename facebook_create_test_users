@@ -1,0 +1,18 @@
+#!/bin/sh
+set -ex
+
+APP_ID="$1"
+APP_SECRET="$2"
+
+echo "getting oauth access token"
+
+APP_ACCESS_TOKEN="`curl -sL "https://graph.facebook.com/oauth/access_token?"\
+"client_id=$APP_ID"\
+"&client_secret=$APP_SECRET"\
+"&grant_type=client_credentials" | awk '{print$1}'`"
+
+curl -vvv -X POST "https://graph.facebook.com/$APP_ID/accounts/test-users?"\
+"&installed=true"\
+"&permissions=read_stream,publish_stream,publish_actions"\
+"&method=post"\
+"&$APP_ACCESS_TOKEN"

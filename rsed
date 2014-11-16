@@ -1,0 +1,26 @@
+#!/bin/sh
+dir=`for last ; do done ; echo $last`
+options=""
+if [ -z "$dir" ]
+then
+    echo "usage: $(basename $0)  [sed options] dirname" >&2
+    exit 1
+fi
+
+if [ ! -d "$dir" ]
+then
+    filepat="$(basename $0)"
+    dir="$(dirname $0)"
+
+    options="-name '${filepat}'" 
+else
+    options=""
+fi
+
+if [ ! -d "$dir" ]
+then
+    echo "$(basename $0): Directory $dir not found!" >&2
+    exit 1
+fi
+
+find "$dir" $options -exec sed -i '' $

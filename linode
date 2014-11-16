@@ -1,0 +1,4 @@
+#!/bin/sh
+HOSTN='li299-117.members.linode.com'
+fwknop --rand-port -A tcp/22,udp/60000,udp/60001,udp/60002,udp/60003,udp/60004 -R -D $HOSTN -G ~/.fwknop/$HOSTN.key
+mosh root@$HOSTN tmux attach

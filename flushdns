@@ -1,0 +1,17 @@
+#!/bin/sh
+
+set -ex
+
+OS="`uname`"
+
+case "$OS" in
+  Darwin) dscacheutil -flushcache
+    sudo killall -USR1 dnsmasq
+    ;;
+  Linux)   sudo /etc/init.d/nscd restart \
+        || sudo /etc/init.d/dnsmasq restart \
+        || echo 'No DNS caching' ;;
+  Windows) ipconfig /flushdns ;;
+  FreeBSD) su - root -c rndc restart ;;
+  *) echo "$0: Unknown OS $OS"
+esac

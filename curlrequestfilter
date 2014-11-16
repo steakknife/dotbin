@@ -1,0 +1,12 @@
+#!/bin/env bash
+set -e
+
+{
+  {
+    {
+      curl "$@"
+    } 3>&- | tee -a log >&3 3>&-
+    exit "${PIPESTATUS[0]}"
+  } 2>&1 | tee -a log 3>&-
+} 3>&1
+exit "${PIPESTATUS[@]}"

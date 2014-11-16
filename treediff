@@ -1,0 +1,82 @@
+#!/bin/bash
+#set -x
+set -e
+
+export PATH="$PATH:/Volumes/Macintosh HD/usr/bin"
+
+if which colordiff >/dev/null 2>&1; then
+  DIFF=colordiff
+else
+  DIFF=diff
+fi
+
+files() {
+  echo "Getting files from $1" >&2
+  pushd "$1" >/dev/null; shift
+  find . "$@"
+  popd >/dev/null
+}
+
+export TMPDIR="/Volumes/Macintosh HD/tmp"
+
+FILES_RIGHT_TEMP="`mktemp -t treediff`"
+FILES_LEFT_TEMP="`mktemp -t treediff`"
+FILES_DIFF_TEMP="`mktemp -t treediff`"
+#trap 'rm -f $FILES_RIGHT_TEMP $FILES_LEFT_TEMP $FILES_DIFF_TEMP' EXIT ERR QUIT INT TERM
+
+process_args() {
+  NON_ARGS=()
+  X=0
+  for ARGV in "$@"; do
+    case "$ARGV" in
+    -x|--exclude)            shift ; EXCLUDE="$1" ;;
+    *)                       NON_ARGS[$X]="$ARGV"
+    esac
+    shift || true
+    X=$((X+1))
+  done
+}
+
+diff_safe() {
+  diff "$@" || { 
+    RESULT=$?
+    case $RESULT in
+    0|1) return 0 ;;
+    *) return $RESULT
+    esac
+  }
+}
+
+DIFF_safe() {
+  $DIFF "$@" || { 
+    RESULT=$?
+    case $RESULT in
+    0|1) return 0 ;;
+    *) return $RESULT
+    esac
+  }
+}
+
+process_args "$@"
+
+LEFT="${NON_ARGS[0]}"
+RIGHT="${NON_ARGS[1]}"
+
+if [ -n "$EXCLUDE" ]; then
+  files "$LEFT" '(' -name "$EXCLUDE" -prune -o ! -type d -print ')' > "$FILES_LEFT_TEMP"
+  files "$RIGHT" '(' -name "$EXCLUDE" -prune -o ! -type d -print ')' > "$FILES_RIGHT_TEMP"
+else
+  files "$LEFT" > "$FILES_LEFT_TEMP"
+  files "$RIGHT" > "$FILES_RIGHT_TEMP"
+fi
+diff_safe -U 9999999 "$FILES_LEFT_TEMP" "$FILES_RIGHT_TEMP" > "$FILES_DIFF_TEMP"
+echo diffed >&2
+tail -n+4 "$FILES_DIFF_TEMP" | while read -r FILE_LINE; do
+  CMD="$(echo $FILE_LINE | cut -c1)"
+  FILE="$(echo $FILE_LINE | cut -c2-)"
+  case $CMD in
+  +) echo "File $FILE only exists in $LEFT" >&2 ;;
+  -) echo "File $FILE only exists in $RIGHT" >&2 ;;
+  *) DIFF_safe -u "$LEFT$FILE" "$RIGHT$FILE" ;;
+  esac
+done

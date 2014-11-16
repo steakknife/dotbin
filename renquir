@@ -1,0 +1,16 @@
+#!/bin/sh -x
+
+X1="$1".png
+X2="$1"@2x.png
+X4="$1"@4x.png
+#ORIG="$1".orig.png
+
+if [ -e "$X2" ] || [ -e "$X4" ]; then
+    echo "Already done" >&2
+    exit 1
+fi
+
+#mv "$1".png "$1".orig.png
+mv iPhoneIcon_Small.png "$1".png
+mv iPhoneIcon_Big.png "$1"@4x.png
+mv iPhoneIcon_Medium.png "$1"@2x.png

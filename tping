@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+set -e
+set -m # job control enabled
+
+SUCCESSES_FILE="$(mktemp -u -t tping.$$)"
+WAIT=1
+PORT=80
+RESULT=1
+DELAY=1
+unset CHILD_PID COUNT SUCCESSES
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -n|--number) shift ; NUMBER="$1" ;;
+    -d|--delay) shift ; DELAY="$1" ;; # maximum time
+    -w|--wait) shift ; WAIT="$1" ;; # minimum time
+    *) if [ -z "$HOST" ]; then
+        HOST="$1" 
+      else
+        PORT="$1"
+      fi  
+      ;;
+  esac 
+  shift
+done
+
+kill_child() {
+  /bin/kill -9 -$CHILD_PID >/dev/null 2>&1
+}
+
+cleanup() {
+  /bin/rm -f "$SUCCESSES_FILE"
+  kill_child || true
+  exit $RESULT
+}
+
+trap 'cleanup' INT QUIT ERR EXIT
+TIMEOUT="$(printf "%d" $WAIT)"
+if [[ "$TIMEOUT" -le "0" ]]; then
+  TIMEOUT=3
+fi
+while [ -z "$NUMBER" ] || [[ $COUNT -lt $NUMBER ]]; do
+  COUNT=$[COUNT+1]
+  date -u | tr '\n' ' '
+  nc -G $TIMEOUT -z $HOST $PORT && { echo >> "$SUCCESSES_FILE" ; } &
+  CHILD_PID=$!
+  disown $CHILD_PID
+  sleep $DELAY
+  if kill_child; then
+    echo "Connection to $HOST $PORT port FAILED"
+  fi
+done
+
+# if reached here, NUMBER != ''
+SUCCESSES="$(grep -c '$' $SUCCESSES_FILE 2>/dev/null)"
+# if >= 50% of NUMBER are successes, then succeed
+if [[ $[SUCCESSES*2] -ge $NUMBER ]]; then
+  RESULT=0
+fi

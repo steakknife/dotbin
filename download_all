@@ -1,0 +1,40 @@
+#!/bin/sh
+set -e
+
+sha256() {
+  if [ -x sha256sum ]; then
+    sha256sum "$@" | cut -d' ' -f1
+  elif [ -x gsha256sum ]; then
+    gsha256sum "$@" | cut -d' ' -f1
+  elif [ `uname` = 'Darwin' ]; then
+    shasum -a256 "$@" | cut -d' ' -f1
+  elif [ -x openssl ]; then
+    openssl dgst -sha256
+  else
+    echo 'Cannot produce a SHA-2 256-bit hash' >&2
+    exit 1
+  fi
+}
+
+URL_TEMPLATE="$1"; shift
+
+versions "$@" | while read -r VERSION; do
+  URL="$(echo "$URL_TEMPLATE" | sed "s/VERSION/$VERSION/g")"
+  FILENAME="$(basename "$URL")"
+  printf "$FILENAME|"
+  curl -vL "$URL" | tee "$FILENAME" | sha256
+done
+
+versions --pre "$@" | while read -r VERSION; do
+  URL="$(echo "$URL_TEMPLATE" | sed "s/VERSION/$VERSION/g")"
+  FILENAME="$(basename "$URL")"
+  printf "$FILENAME|"
+  curl -vL "$URL" | tee "$FILENAME" | sha256
+done
+
+versions --head "$@" | while read -r VERSION; do
+  URL="$(echo "$URL_TEMPLATE" | sed "s/VERSION/$VERSION/g")"
+  FILENAME="$(basename "$URL")"
+  printf "$FILENAME|"
+  curl -vL "$URL" | tee "$FILENAME" | sha256
+done

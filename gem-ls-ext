@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+
+for gem_dir in `echo "${GEM_PATH}:${GEM_HOME}" | tr ':' ' '`
+do
+  echo "checking $gem_dir" >&2
+  find "${gem_dir}/gems" -type d -depth 1 | while read -r gem_name
+  do
+    echo "  checking gem $gem_name" >&2
+    if find "${gem_name}" -type f | file -f - | egrep -qsi ' (binary|bundle|executable) '
+    then
+      echo $(basename ${gem_name})
+    else
+      echo "    not found" >&2
+    fi
+  done
+done | sort -u

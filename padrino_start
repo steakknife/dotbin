@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+set -e
+
+project="$1"
+plugins="${2:-googleanalytics heroku maintenance exception_notifier deflect auto_locale rewrite protection bootstrap recaptcha}"
+RUBY_VERSION="${3:-2.0.0-p0}"
+RUBY_MAJOR_VERSION="${RUBY_VERSION%-*}"
+
+if [ -z "$project" ]; then
+  echo "project cannot be blank" >&2
+  exit 1
+fi
+
+vcs_init() {
+  git init
+}
+
+vcs_commit() {
+  git add -A
+  git commit -m "$@"
+}
+
+
+echo "Creating new padrino project '$project'"
+
+padrino g project "$project" \
+    -s jquery -e haml -c sass \
+    -d activerecord -a postgres \
+    -t rspec -m mocha -t shoulda 
+
+cd "$project"
+
+echo '' >> .gitignore # fixes a bug in padrino generator
+echo '/vendor/bundle/' >> .gitignore
+echo '/vendor/cache/' >> .gitignore
+mkdir -p .bundle
+cat << EOF > .bundle/config 
+---
+BUNDLE_PATH: vendor/bundle
+BUNDLE_BIN: vendor/bundle/bin
+BUNDLE_DISABLE_SHARED_GEMS: '1'
+BUNDLE_CACHE_ALL: true
+EOF
+
+echo "Using ruby $RUBY_VERSION"
+echo "ruby '$RUBY_MAJOR_VERSION'" >> Gemfile
+echo "$RUBY_VERSION" > .ruby-version
+
+echo "Vendoring gems"
+bundle package --all
+vcs_init
+vcs_commit 'initial commit'
+
+
+echo "Installing plugins"
+for plugin in $plugins; do
+  echo "Installing plugin $plugin"
+  bundle exec padrino-gen plugin "$plugin"
+  bundle package --all
+  vcs_commit "install plugin $plugin"
+done
+
+bundle exec padrino g admin --theme warehouse
+vcs_commit "installed admin"
+
+bundle exec padrino rake ar:migrate
+vcs_commit "migrated db"
+
+if [[ "$plugins" == *"heroku"* ]]; then
+  heroku create
+
+  heroku labs:enable user-env-compile
+  heroku labs:enable pipelines
+
+  # google analytics
+  heroku config:set GOOGLE_ANALYTICS_KEY="UA-your_google_analytics_key_here"
+
+  # loggly
+  heroku addons:add loggly:mole
+
+  # newrelic
+  echo "gem 'padrino-rpm'" >> Gemfile
+  bundle package --all
+  heroku addons:add newrelic:standard
+  vcs_commit 'add newrelic'
+
+  git push heroku master
+fi
+
+echo "Done!"
+echo ""
+echo "   cd '$project'   to get started"
+echo ""

@@ -1,0 +1,2 @@
+#!/bin/sh
+exec sudo sweep -archive -f -extensive -cab -pua -suspicious -eec /

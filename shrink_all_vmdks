@@ -1,0 +1,4 @@
+#!/bin/sh
+exec find ~/Documents/Virtual\ Machines.localized/ \
+  -type f -name '*.vmdk'  ! -name '*-[0s]*' \
+  -exec /Applications/VMware\ Fusion.app/Contents/Library/vmware-vdiskmanager -k {} \;

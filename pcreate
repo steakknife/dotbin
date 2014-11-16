@@ -1,0 +1,10 @@
+#!/bin/sh
+set -e
+DB_NAME="${DB_NAME:-$1}"
+DB_NAME="${DB_NAME:-$(basename "$PWD" | sed s/-/_/g)}"
+psql -h localhost -c "DROP DATABASE ${DB_NAME}_test" || true
+psql -h localhost -c "DROP DATABASE ${DB_NAME}_development" || true
+psql -h localhost -c "DROP DATABASE ${DB_NAME}" || true
+psql -h localhost -c "CREATE DATABASE ${DB_NAME}_test" 
+psql -h localhost -c "CREATE DATABASE ${DB_NAME}_development" 
+psql -h localhost -c "CREATE DATABASE ${DB_NAME}" 

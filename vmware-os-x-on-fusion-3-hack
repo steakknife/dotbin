@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+
+echo "Mac on Mac Fusion haxor"
+echo
+echo "This utility fakes fusion into thinking it is running a mac os x **server** when the **desktop** is actually running."
+echo
+
+FUSION_LIB_HOME="/Library/Application Support/VMware Fusion"
+FUSION_TOOLS_HOME="$FUSION_LIB_HOME/isoimages"
+FUSION_TOOLS_BACKUP="$FUSION_TOOLS_HOME/backup"
+FUSION_TOOLS_ISO="darwin.iso"
+BACKUP_FILES="$FUSION_TOOLS_ISO tools-key.pub *.sig"
+EXTRA_BACKUP="$HOME/.vmware.fusion.3.mac-on-mac.tools.backup"
+
+if [[ `uname` != 'Darwin' ]]; then
+    echo "Error: wrong operating system."
+    exit 1
+fi
+
+if [ -n "`ps aux | grep 'vmware-vmx' | grep -v grep`" ]; then
+    echo 'Error: VMware Fusion vm(s) are running, please power off/suspend them.'
+    exit 1
+fi
+
+if [ ! -d "$FUSION_LIB_HOME" ] || [ ! -d "$FUSION_TOOLS_HOME" ]; then
+    echo 'Error: VMware Fusion 3 is not installed :('
+    exit 1
+fi
+
+
+echo "(Could prompt for user password here, requires root.)"
+sudo id >/dev/null
+if [ $? -ne 0 ]; then
+    echo "Error: requires sudo"
+    exit 1
+fi
+
+
+case $1 in
+on)
+    if [ -d "$FUSION_TOOLS_BACKUP" ]; then
+        echo 'Error: Backup was found :('
+        echo 
+        echo "  try:"
+        echo 
+        echo "  $0 off ; $0 on "
+        exit 1
+    fi
+    if [ ! -d "$EXTRA_BACKUP" ]; then
+       echo "Making an extra backup at $EXTRA_BACKUP"
+       mkdir -p "$EXTRA_BACKUP" || exit 1
+       rsync -a "$FUSION_LIB_HOME/" "$EXTRA_BACKUP/" || exit 1
+    fi
+
+    sudo mkdir -p "$FUSION_TOOLS_BACKUP" || exit 1
+
+    pushd . >/dev/null 
+    cd "$FUSION_TOOLS_HOME" || exit 1
+    for FILE in $BACKUP_FILES ; do
+       sudo mv $FILE "$FUSION_TOOLS_BACKUP" || exit 1
+    done 
+    perl -n -p -e 's/ServerVersion.plist/SystemVersion.plist/g' < "$FUSION_TOOLS_BACKUP/$FUSION_TOOLS_ISO" | sudo tee "$FUSION_TOOLS_ISO" >/dev/null
+    sudo openssl genrsa -out tools-priv.pem 2048
+    sudo openssl rsa -in tools-priv.pem -pubout -out tools-key.pub
+    openssl dgst -sha1 -sign tools-priv.pem < "$FUSION_TOOLS_HOME/$FUSION_TOOLS_ISO" | sudo tee "$FUSION_TOOLS_ISO.sig" >/dev/null
+    for FILE in *.iso ; do
+        openssl dgst -sha1 -sign tools-priv.pem < "$FILE" | sudo tee "$FILE.sig" >/dev/null
+    done
+    popd >/dev/null
+    ;;
+off)
+    if [ ! -d "$FUSION_TOOLS_BACKUP" ]; then
+        echo 'Error: Backup was not found :('
+        exit 1
+    fi
+    pushd . >/dev/null 
+    cd "$FUSION_TOOLS_BACKUP" || exit 1
+    for FILE in $BACKUP_FILES ; do
+      sudo mv -f $FILE "$FUSION_TOOLS_HOME"
+    done
+    popd >/dev/null 
+    sudo rm -rf "$FUSION_TOOLS_BACKUP" || exit 1
+    ;;
+*)
+    echo
+    echo "Usage $0: {on|off}"
+    echo
+    echo  on     Turns the hack on, backing up replaced files
+    echo  off    Turns the hack off by restoring original files from the backup
+    echo
+    echo
+esac

@@ -1,0 +1,26 @@
+#!/bin/sh
+set -e
+set -x
+
+drive="$1"
+dev="/dev/$drive"
+
+if [ -z "$drive" ] || [ ! -e "$dev" ]; then
+  echo "missing /dev/disk# (arg 1, without /dev/)" >&2
+  exit 1
+fi
+dir="${2%/*}"
+dir="${dir:-.}"
+cd "$dir"
+filename="${2##*/}"
+if [ -z "$filename" ]; then
+  echo "missing filename (arg 2)" >&2
+  exit 1
+fi
+
+#diskutil -u "$drive"
+#cdrdao read-cd --datafile "$filename.bin" --driver generic-mmc:0x20000 --device "$drive" --read-raw "$filename.toc"
+cdrdao read-cd --datafile "$filename.bin" --device "$dev" --read-raw "$filename.toc"
+cdrdao read-cd --datafile "$filename.bin" --driver generic-mmc:0x20000 --device IODVDServices/0 --read-raw "$filename.toc"
+toc2cue "$filename.toc" "$filename.cue"
+#rm "$2.toc"

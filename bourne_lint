@@ -1,0 +1,48 @@
+#!/bin/sh -ex
+
+do_replacement() {
+  FROM="$(echo $1 | grep_to_human)"
+  TO="$(echo $2 | sed_to_human)"
+
+  FORMATED_NUMBER="$(printf '%04g' $NUMBER)"
+
+  echo "$FORMATED_NUMBER: obsolete syntax $FROM -> $TO"
+
+  if [ -z "$NOOP" ]; then
+    echo -n "$FORMATED_NUMBER: Modifying files ... "
+    sed -i "$BACKUP_EXT$FORMATED_NUMBER" "s/$1/$2/g" $FILES && echo -n "done"
+    echo
+  fi
+}
+
+obsolete() {
+  NUMBER=$((NUMBER+1))
+  grep "$1" $FILES && do_replacement "$1" "$2"
+}
+
+grep_to_human() {
+  sed_to_human
+}
+
+sed_to_human() {
+     sed 's/\[\^.\][+*]*/.../g' \
+   | sed 's/\\[()]//g' \
+   | sed 's/\\\([^0-9&]\)/\1/g' \
+   | sed 's/\\\([0-9&]\)/.../g'
+}
+
+BACKUP_EXT='.bak'
+
+while [[ "$#" -gt 0 ]]; do
+  case "$1" in
+  -n|--noop) NOOP=1 ;;
+  -B|--no-backup) BACKUP_EXT='' ;;
+  *) NON_ARGS="$NON_ARGS $1" ;;
+  esac
+  shift  
+done
+
+FILES="$NON_ARGS"
+
+obsolete '&>' '>&'
+obsolete '\$\[\([^]]*\)\]' '$((\1))'

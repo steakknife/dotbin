@@ -1,0 +1,17 @@
+#!/bin/sh
+
+KEY=ca8c4f51e5bec809
+
+
+case "$1" in
+c)
+    REQUEST_URL="`echo $2 | sed 's/\.html$//'`"
+    exec curl "http://api.wunderground.com/api/$KEY/conditions/q/$REQUEST_URL.json"
+    ;;
+geo)
+    LAT="$2"
+    LON="$3"
+    exec curl "http://api.wunderground.com/api/$KEY/geolookup/q/$LAT,$LON.json"
+    ;;
+esac
+

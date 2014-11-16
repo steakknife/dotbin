@@ -1,0 +1,10 @@
+#!/bin/sh
+set -e
+set -x
+
+for SDK_PLIST in /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS*.*.sdk/SDKSettings.plist; do
+  sudo /usr/libexec/PlistBuddy -c 'Set :DefaultProperties:CODE_SIGNING_REQUIRED bool YES' "$SDK_PLIST"
+  sudo /usr/libexec/PlistBuddy -c 'Set :DefaultProperties:ENTITLEMENTS_REQUIRED bool YES' "$SDK_PLIST"
+  sudo /usr/libexec/PlistBuddy -c 'Set :DefaultProperties:AD_HOC_CODE_SIGNING_ALLOWED bool NO' "$SDK_PLIST"
+done
+

@@ -1,0 +1,12 @@
+#!/bin/sh
+
+command="$1"
+
+if [ "$2" ]; then
+  shift
+fi
+
+case $command in
+pclone) cd ~/github/steakknife && git clone git@github.com:steakknife/$1.git ;;
+clone) cd ~/github && git clone git@github.com:$1.git ;;
+esac

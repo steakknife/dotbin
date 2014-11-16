@@ -1,0 +1,3 @@
+#!/bin/sh
+URL="${1-/}"
+echo "GET $URL HTTP/1.1\r\nConnection: close\r\n\r\n"

@@ -1,0 +1,24 @@
+#!/bin/sh
+set -e
+unset TEMP_GOSCRIPT_DIR GOSCRIPT; GOARGS=() ARGS=()
+trap 'RESULT=$?; rm -rf "$TEMP_GOSCRIPT_DIR"; exit $RESULT' INT QUIT TERM EXIT ERR
+filter() { awk '( NR!=1 || !/^#!/ ) && !/^package /; BEGIN{ print "package main" }' "$@"; }
+TEMP_GOSCRIPT_DIR="$(mktemp -d -t XXXXXXXXXX)"
+TEMP_GOSCRIPT="$TEMP_GOSCRIPT_DIR/main$$.go"
+for ((I=1; I<=$#; ++I)); do
+  ARG="$(eval echo \$$I)"
+  case "$ARG" in
+    -*) [ -z "$GOSCRIPT" ] && GOARGS+=("$ARG") || ARGS+=("$ARG") ;;
+    *) [ -t 0 ] && [ -z "$GOSCRIPT" ] && GOSCRIPT=("$ARG") || ARGS+=("$ARG") ;;
+  esac
+done
+
+{
+if [ -z "$GOSCRIPT" ]; then
+  filter
+else
+  filter < "$GOSCRIPT"
+fi ;} > "$TEMP_GOSCRIPT"
+
+go run "${GOARGS[@]}" "$TEMP_GOSCRIPT" "${ARGS[@]}"
+

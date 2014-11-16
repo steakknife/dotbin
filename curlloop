@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+while true; do
+  curl -C - --max-time 60 --connect-timeout 20 "$@"; if [ $? = 130 ]; then
+    break
+  fi
+done

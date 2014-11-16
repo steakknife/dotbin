@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -e
+#set -x
+
+if [ "$1" = '-not-apple' ]; then
+  shift
+  SKIP_APPLE=1
+fi
+
+find "${1-/}" -iregex '.*/[^/]*\.kext$' 2>/dev/null | while read -r KEXT_ROOT; do
+  INFO_PLIST="${KEXT_ROOT}/Contents/Info.plist"
+  if [ -e "$INFO_PLIST" ]; then
+    BUNDLE_ID="$(grep -m2 -A1 '<key>CFBundleIdentifier</key>' "$INFO_PLIST" | grep -o '<string>[^<]*</string>' | sed 's%<[^>]*>%%g')"
+    if [ -z "$SKIP_APPLE" ] || ! [[ $BUNDLE_ID =~ com.apple ]]; then
+      echo "$KEXT_ROOT: $BUNDLE_ID"
+    fi
+  fi
+done

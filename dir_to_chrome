@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -e
+if [ -z "$2" ]; then
+  exec crxmake --pack-extension="$1" --extension-output="$1.crx"
+else
+  exec crxmake --pack-extension="$1" --extension-output="$1.crx"  --pack-extension-key="$2"
+fi

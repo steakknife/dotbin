@@ -1,0 +1,7 @@
+#!/bin/sh
+set -e
+
+rvm gemset use global
+rvm gemset delete --force "${gemset}"
+rvm gemset create "${gemset}"
+rvm gemset use "${gemset}"

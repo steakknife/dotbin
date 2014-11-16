@@ -1,0 +1,42 @@
+#!/bin/sh
+set -e
+
+ARGS=()
+while [ -n "$1" ]; do
+  case "$1" in
+  -*) ;;
+  *) ARGS+=("$1")
+  esac
+  shift
+done
+
+pick_command() {
+  which -a $1 2>/dev/null | grep -v $0 | head -1
+}
+
+run_command() {
+  CMD="$1"
+  N="$2"
+  shift 2
+
+  exec "$(pick_command $CMD)" "$@" | cut -d' ' -f$N
+}
+
+has_command() {
+  test -x "$(pick_command $1)"
+}
+
+if has_command   shasum; then
+  run_command    shasum 1 -a256 "$ARGS"
+elif has_command sha256sum; then
+  run_command    sha256sum 1 "$ARGS"
+elif has_command gsha256sum; then
+  run_command    gsha256sum 1 "$ARGS"
+elif has_command sha256; then
+  run_command    sha256 1 '-r' "$ARGS"
+elif has_command openssl; then
+  run_command    openssl 2 dgst -sha256 "$ARGS"
+else
+  echo 'Cannot produce a SHA-2 256-bit hash' >&2
+  exit 1
+fi

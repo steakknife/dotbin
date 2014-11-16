@@ -1,0 +1,15 @@
+#!/bin/sh
+set -e
+VOLNAME="$1"
+DMG="$2"
+SRC_DIR="$3"
+CODESIGN_IDENTITY="$4"
+
+rm -f "$DMG"
+hdiutil create -srcfolder "$SRC_DIR" \
+  -volname "$VOLNAME" \
+  -fs HFS+ -fsargs "-c c=64,a=16,e=16" \
+  -format UDZO -scrub -imagekey zlib-level=9 "$DMG"
+if [ -n "$CODESIGN_IDENTITY" ]; then
+  codesign -s "$CODESIGN_IDENTITY" -v "$DMG"
+fi

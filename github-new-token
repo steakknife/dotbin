@@ -1,0 +1,25 @@
+#!/bin/sh
+set -e
+
+
+if [ -n "$1" ]
+then
+  scopes="\"scopes\": [ \"`echo "$1" | sed 's/,/","/g'`\" ]"
+fi
+
+if [ -n "$2" ]
+then
+  if [ -n "$scopes" ]
+  then
+    scopes="$scopes,"
+  fi
+  description="\"note\": \"$2\""
+fi
+
+curl -vvv -X POST -u "`git config github.user`" https://api.github.com/authorizations -d@- \
+<< EOF
+{
+  $scopes
+  $description
+}
+EOF

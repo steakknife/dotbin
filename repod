@@ -1,0 +1,36 @@
+#!/bin/sh
+set -e
+if [ ! -e Podfile ]; then
+  echo "Podfile not found" >&2
+  exit 1
+fi
+
+if [ -z "$1" ]; then
+    echo "Missing pod to reinstall" >&2
+    exit 1
+fi
+
+unpod() {
+    if ! grep -qs "$1" Podfile; then
+        echo "Pod $1 not found in Podfile" >&2
+        exit 1
+    fi
+    sed -i '' "s%pod.*$1.*%#&%g" Podfile
+}
+
+ununpod() {
+    if ! grep -qs "$1" Podfile; then
+        echo "Pod $1 not found in Podfile" >&2
+        exit 1
+    fi
+    sed -i '' "s%^#*\(pod.*$1.*\)$%\1%g" Podfile
+}
+
+for POD in "$@"; do
+   unpod "$POD"
+done
+pod
+for POD in "$@"; do
+   ununpod "$POD"
+done
+pod

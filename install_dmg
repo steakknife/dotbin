@@ -1,0 +1,96 @@
+#!/bin/sh
+set -ex
+
+trap - HUP
+
+download() {
+  local URL="$1"
+  local SAVE_AS="$2"
+
+  trap "rm -f '$SAVE_AS' 2>/dev/null" QUIT TERM INT
+  curl -kLo "$SAVE_AS" -- "$URL" 
+}
+
+install_pkg() {
+  sudo installer -package "$1" -target "/"
+}
+
+install_app() {
+  cp -R "$1" ~`whoami`/Applications
+}
+
+install_app_as_admin() {
+  sudo cp -R "$1" /Applications
+}
+
+mount_dmg() {
+  local DMG="$1"
+
+  MOUNTPOINT="`mktemp -d -t mount_dmg`"
+  hdiutil mount "$DMG" -mountpoint "$MOUNTPOINT" >/dev/null
+  echo "$MOUNTPOINT"
+}
+
+unmount_dmg() {
+  local MOUNT="$1"
+
+  hdiutil unmount "$MOUNT"
+}
+
+install_dmg() {
+  local DMG="$1"
+  local MOUNT=""
+
+  MOUNT="`mount_dmg \"$DMG\"`"
+
+  pushd "$MOUNT" >/dev/null
+
+  for PKG in *.pkg; do
+    if [ -d "$PKG" ]; then 
+      install_pkg "$PKG"
+    else
+      echo "Unknown installer $PKG"
+      RESULT=1
+    fi
+  done
+
+  for APP in *.[Aa][Pp][Pp]; do
+    if [ -d "$APP" ]; then
+      if [ -d "$APP" ]; then
+        install_app_as_admin "$APP"
+      else
+        install_app "$APP"
+      fi
+    else
+      echo "Unknown installer app $APP"
+      RESULT=1
+    fi
+  done
+    
+
+  popd >/dev/null
+  unmount_dmg "$DMG"
+
+  test "$RESULT" -ne 1  
+}
+
+if [ "$1" = "" ]; then
+  echo
+  echo "Usage: $0 file.dmg or url/to/installer"
+  echo
+  echo
+  false
+fi
+
+if echo "$1" | grep -qs "^[a-z0-9]*://" ; then
+  URL="$1"
+  INSTALLER="`mktemp -t temp.dmg`"
+  download "$URL" "$INSTALLER"
+else
+  INSTALLER="$1"
+  SAVE=1
+fi
+
+install_dmg "$INSTALLER"
+
+[ "$SAVE" -ne 1 ] && \rm -f "$INSTALLER"

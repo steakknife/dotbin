@@ -1,0 +1,16 @@
+#!/bin/sh -e
+
+if [ -z "$1" ]; then
+  echo "certificate name argument is missing" >&2
+  exit 1
+fi
+
+XCODE_PATH="$(xcode-select -print-path)"
+
+PLIST="${XCODE_PATH}/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS6.1.sdk/SDKSettings.plist"
+sudo /usr/libexec/PlistBuddy -c Set AD_HOC_CODE_SIGNING_ALLOWED YES "$PLIST"
+
+export CODESIGN_ALLOCATE="${XCOPY_PATH}/Platforms/iPhoneOS.platform/Developer/usr/bin/codesign_allocate"
+
+
+codesign -fs "$1" *.app

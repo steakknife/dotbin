@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -e
+sum=0
+while read -r num; do
+  sum=$[sum+num]
+done < <( grep -o '[0-9][0-9,]*' | sed 's/,//g' )
+echo $sum

@@ -1,0 +1,10 @@
+#!/bin/sh
+# hide file by putting a dot in front
+# usage: hide FILE [FILE]...
+set -e
+
+for f in "$@"; do
+  b=$(basename "$f")
+  [[ $b[0] != '.' ]] && \mv -v "$f" $(dirname "$f")/".$b"
+done
+

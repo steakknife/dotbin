@@ -1,0 +1,248 @@
+#!/usr/bin/env bash
+set -e
+
+usage() {
+  echo
+  echo "Usage :: $0 [option(s)] project_name"
+  echo
+  echo "-h|--help  this"
+  echo "-e|--heroku  use heroku"
+  echo "-g|--gunicorn use gunicorn instead of default"
+  echo "-s|--staging [staging_app_name]"
+  echo "-p|--production production_app_name  override randomly generated heroku appname"
+  echo "-f|--force"
+  echo "-c|--celery"
+  exit 1
+}
+
+postgres_find_user() {
+  if [ -d /Library/Postgres ] || [ -d /etc/postgresql ]
+  then
+    echo postgres
+
+  elif [ -d /private/var/pgsql ]
+  then
+    echo _postgres
+
+  else
+    echo "Error: could not determine postgres server username" >&2
+    exit 1
+  fi
+}
+
+postgres_find_etc_dir() {
+  if [ -d /Library/Postgres ]
+  then
+    echo `ls /Library/Postgres | sort -n | tail -1`/data/
+
+  elif [ -d /etc/postgresql ]
+  then
+    echo `ls /etc/postgresql | sort -n | tail -1`/main/
+
+  elif [ -d /private/var/pgsql ]
+  then
+    echo /private/var/pgsql/
+
+  else
+    echo "Error: postgres etc dir not found" >&2
+    exit 1
+  fi
+}
+
+postgres_setup_ident() {
+  local postgres_user="`postgres_find_user`"
+  local postgres_etc_dir="`postgres_find_etc_dir`"
+
+  cat << EOF | sudo -Hu "$postgres_user" sh
+  if grep '^local[^a]*all[^a]*all[^i]*ident[^s]*sameuser.*' "$postgres_etc_dir/data/pg_hba.conf" >/dev/null
+  then
+    :;
+  else
+    if grep '^local[^a]*all[^a]*all' "$postgres_etc_dir/data/pg_hba.conf" >/dev/null
+then
+      sed 's/^(local[^a]*all[^a]*all).*/\1 ident sameuser/' "$postgres_etc_dir/data/pg_hba.conf" > "$postgres_etc_dir/data/pg_hba.conf.new"
+      mv "$postgres_etc_dir/data/pg_hba.conf"      "$postgres_etc_dir/data/pg_hba.conf.old"
+      mv "$postgres_etc_dir/data/pg_hba.conf.new"  "$postgres_etc_dir/data/pg_hba.conf"
+    else
+      echo 'local all all ident sameuser' | tee -a "$postgres_etc_dir/data/pg_hba.conf" >/dev/null
+    fi
+    pg_ctl -D $PGDATA reload
+  fi
+EOF
+}
+
+        no_switch=0
+      help_switch=1
+  gunicorn_switch=2
+    heroku_switch=3
+   staging_switch=4
+production_switch=5
+     force_switch=6
+    celery_switch=7
+
+get_switch() {
+  case "$1" in
+     -\?|-h|--help)  echo $help_switch       ;;
+     -g|--gunicorn)  echo $gunicorn_switch   ;;
+       -e|--heroku)  echo $heroku_switch     ;;
+      -s|--staging)  echo $staging_switch    ;;
+   -p|--production)  echo $production_switch ;;
+        -f|--force)  echo $force_switch      ;;
+       -c|--celery)  echo $celery_switch     ;;
+                 *)  echo $no_switch         ;;
+  esac
+}
+
+is_not_switch() {
+  [ `get_switch "$1"` -eq $no_switch ]
+}
+
+
+while [ $# -gt 0 ]; do
+  cur_switch=`get_switch "$1"`
+  case $cur_switch in
+    $production_switch) # use next non-switch as the production app name
+                        if [ $# -gt 1 ] && is_not_switch "$2" 
+                        then
+                          heroku_production_app="$2"
+                          shift
+                        else
+                          echo "Missing production app name" >&2
+                          usage
+                        fi
+                        ;;
+       $staging_switch) staging=1
+                        # use next non-switch as the staging app name
+                        if [ $# -gt 1 ] && is_not_switch "$2" 
+                        then
+                          heroku_staging_app="$2"
+                          shift
+                        fi
+                        ;;
+          $help_switch) usage ;;
+      $gunicorn_switch) gunicorn=1 ;;
+        $heroku_switch) heroku=1 ;;
+         $force_switch) force=1 ;;
+        $celery_switch) celery=1 ;;
+            $no_switch) project_name="${project_name:-$1}" ;;
+  esac
+  shift
+done
+
+if [ -z "$project_name" ]
+then
+  echo "Missing project name"
+  usage
+fi
+
+# Prepare
+if [ x"$force" = x'1' ] && [ -d "$project_name" ]
+then
+  rm -rf "$project_name"
+fi
+
+mkdir "$project_name"
+cwd="`pwd`"
+cd "$project_name"
+trap 'RESULT=$?; cd "$cwd" || cd ; rm -rf "$cwd/$project_name" ; exit $RESULT' ERR QUIT INT TERM EXIT
+
+# Django
+virtualenv venv --distribute
+source venv/bin/activate
+pip install Django psycopg2 
+django-admin.py startproject "$project_name" .
+
+## Django - gunicorn
+if [ x"$gunicorn" = x'1' ]
+then
+  pip install gunicorn
+  if [ x"$heroku" = x'1' ]
+  then
+    echo "web: gunicorn $project_name.wsgi -b 0.0.0.0:\$PORT -w 3" > Procfile
+    #echo 'web: gunicorn app:app -b 0.0.0.0:$PORT -w 3' > Procfile
+  fi
+  echo "INSTALLED_APPS += ( 'gunicorn', )" >> "$project_name"/settings.py
+#  echo 'worker: python worker.py' >> Procfile
+fi
+
+## Django - heroku
+if [ x"$heroku" = x'1' ]
+then
+  pip install dj-database-url
+  cat << EOF >> "$project_name"/settings.py
+import dj_database_url
+DATABASES = {'default': dj_database_url.config(default='postgres://localhost')}
+EOF
+fi
+
+## Django - celery
+if [ x"$celery" = x'1' ]
+then
+  pip install django-celery
+  echo celerybeat-schedule.db >> .gitignore
+  cat << EOF >> "$project_name"/settings.py
+INSTALLED_APPS += ( 'kombu.transport.django',
+                    'djcelery', )
+BROKER_BACKEND = 'django'
+EOF
+  if [ x"$heroku" = x'1' ]
+  then
+    echo 'celeryd: python manage.py celeryd -E -B --loglevel=INFO' >> Procfile
+  fi
+fi
+
+## Django (end)
+
+sed -n '$!p' manage.py > manage.py.new
+mv -f manage.py.new manage.py
+cat << EOF >> manage.py
+    import os.path
+    if os.path.isfile('.syncdb'):
+        try:
+            os.mkdir('.syncingdb', 0700)
+            import subprocess
+            args = (sys.executable, __file__, 'syncdb', '--noinput')
+            subprocess.check_call(args)
+            os.unlink('.syncdb')
+            os.rmdir('.syncingdb')
+        except OSError:
+            pass
+
+
+    execute_from_command_line(sys.argv)
+EOF
+touch "$project_name"/.syncdb
+
+pip freeze > requirements.txt
+
+
+# Git
+cat << EOF >> .gitignore
+venv
+*.pyc
+EOF
+
+git init
+git add -A
+git commit -am 'initial commit'
+
+
+# Heroku
+
+if [ x"$heroku" = x'1' ]
+then
+  if [ -z $heroku_production_app ]
+  then
+    heroku create --stack cedar --remote production ${heroku_production_app} 
+  else
+    heroku create --stack cedar --remote production ${project_name} || heroku create --stack cedar --remote production
+  fi
+
+
+  if [ x"$staging" = x'1' ]
+  then
+    heroku create --stack cedar --remote staging ${heroku_staging_app}
+  fi
+fi
+
+trap - ERR QUIT INT TERM EXIT

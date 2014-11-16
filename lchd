@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# list agents
+
+l()    {
+    ls "$1" | xargs -I@ printf "%40s %s\n" @ "$2" 
+}
+
+l_sd() {
+    l /System/Library/LaunchDaemons "OSX,   system-wide"
+}
+l_sa() {
+    l /System/Library/LaunchAgents  "OSX,   per-user   "
+}
+l_ld() {
+    l /System/Library/LaunchDaemons "admin, system-wide"
+}
+l_la() {
+    l /Library/LaunchAgents         "admin, per-user   "
+}
+l_ua() {
+    l ~/Library/LaunchAgents        "personal          "
+}
+
+l_all() {
+    l_sd; l_sa ; l_ld; l_la; l_ua
+}
+
+list() {
+    case "$1" in
+    sysagnts|sa) l_sa ;;
+    sysdaems|sd) l_sd ;;
+    libagnts|la) l_la ;;
+    libagnts|ld) l_ld ;;
+    usragnts|ua) l_ua ;;
+    *) l_all
+    esac
+}
+
+u() {
+    local prog="$(basename $0)"
+cat << EOF
+   usage: $prog l sysagnts sysdaems libagnts libdaems usragnts
+
+    sysagnts    /System/Library/LaunchAgents   per  user      OSX
+    sysdaems    /System/Library/LaunchDaemons  system wide    OSX 
+
+    libagnts    /Library/LaunchAgents          per  usr       your i.t.
+    libdaems    /Library/LaunchDaemons         system wide    your i.t.
+
+    usragnts    ~/Library/LaunchAgents         your user      yours
+EOF
+}
+
+case "$1" in
+l|list) list "$2" ;;
+*) u
+esac
+
+

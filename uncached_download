@@ -1,0 +1,34 @@
+#!/bin/sh
+set -e
+
+options='-L'
+url=''
+filename=''
+other=''
+
+while [ ${?} -gt 0 ]
+do
+  case "${1}" in
+    -*) 
+      options="${options} ${1}"
+      ;;
+    *)
+      if [ -z "${url}" ]
+      then
+        url="${1}"
+      elif [ -z "${filename}" ]
+      then
+        filename="${1}"
+      else
+        other="${other} ${1}"
+      fi
+  esac
+  shift
+done
+
+if [ -z "${filename}" ]
+then
+  curl ${options} -O "${url}" ${other}
+else
+  curl ${options} "${url}" -o "${filename}" ${other}
+fi

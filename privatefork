@@ -1,0 +1,18 @@
+#!/bin/sh
+set -e
+
+theirgithubuser="$1"
+repo="$2"
+mygithubuser=steakknife
+
+upstream="git://github.com/$theirgithubuser/$repo.git"
+mine="git@github.com:$mygithubuser/$repo.git"
+
+cd ~/github/$mygithubuser
+git clone "$upstream"
+git remote rm origin 
+git remote add origin "$mine"
+git remote add upstream "$upstream"
+github create-from-local --private
+git branch --set-upstream upstream upstream/master
+git pull --all

@@ -1,0 +1,64 @@
+#!/bin/sh
+path_to_fusion_app='/Applications/VMware Fusion.app'
+vmrun="${path_to_fusion_app}/Contents/Library/vmrun"
+
+command="${1}" ; shift
+
+case "${command}" in
+start|stop|reset|suspend|pause|unpause|list|\
+listSnapshots|snapshot|deleteSnapshot|revertToSnapshot|\
+runProgramInGuest|fileExistsInGuest|directoryExistsInGuest|setSharedFolderState|addSharedFolder|\
+removeSharedFolder|enableSharedFolders|disableSharedFolders|listProcessesInGuests|killProcessInGuest|\
+runScriptInGuest|deleteFileInGuest|createDirectoryInGuest|deleteDirectoryInGuest|listDirectoryInGuest|CopyFileFromHostToGuest|\
+CopyFileFromGuestToHost|renameFileInGuest|captureScreen|writeVariable|readVariable|vprobeVersion|vprobeLoad|\
+vprobeLoadFile|vprobeReset|vprobeListProbes|vprobeListGlobals|\
+upgradevm|installTools|deleteVM)
+  while [ $# -gt 0 ]
+  do
+    if [ x"${1}" = x'-f' ] || [ x"${1}" = x'--foreground' ] 
+    then
+      foreground=1
+    elif [ -n "${1}" ]
+    then
+      vmx=~/Documents/Virtual\ Machines.localized/"${1}".vmwarevm/"${1}".vmx 
+      if [ ! -e "${vmx}" ]
+      then
+        vmx="${1}"
+      fi
+    else
+      args="${args} '${1}'"
+    fi
+
+    shift
+  done
+
+  if ! [ x"${command}" = x'list' ] && [ -z "${vmx}" ] 
+  then
+    echo "missing vm name"
+    exit 1
+  fi
+
+  if [ -n "${foreground}" ]
+  then
+    set -x
+    "${vmrun}" -T fusion "${command}" "${vmx}" ${args} 
+    set +x
+  else
+    set -x
+    "${vmrun}" -T fusion "${command}" "${vmx}" ${args}  &
+    set +x
+  fi
+
+  ;;
+
+*)
+  "${vmrun}" -T fusion --help
+  cat << EOF
+
+
+   ***** Ignore the path to vmx above, only give the VM name.  -T ws not required.
+
+
+EOF
+esac
+

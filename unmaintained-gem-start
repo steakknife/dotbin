@@ -1,0 +1,31 @@
+#!/bin/sh
+set -e
+
+gem="$1"
+gem_fork_directory="$HOME/github/steakknife"
+
+#source_code=`curl https://rubygems.org/api/v1/gems/$gem.json | tr ',' "\n"`
+#source_code=`curl https://rubygems.org/api/v1/gems/$gem.json | tr ',' "\n" | awk -F' ' '/"source_code_uri":"/{print$2}' | sed 's/"$//'`
+source_code=`curl -s https://rubygems.org/api/v1/gems/$gem.json | tr ',' "\n" | grep '"source_code_uri"' | sed 's/^"source_code_uri":"//;s/"$//'`
+if echo $source_code | grep -q :null
+then
+  echo "source code not found via rubygems" >&2
+  print "enter the sourcecode url for $gem > " >&2
+  read -r source_code
+  if [ -z "$source_code" ]
+  then
+    echo 'empty sourcecode url' >&2
+    exit 1
+  fi
+fi
+echo source_code=$source_code
+
+mkdir -p "$gem_fork_directory"
+cd "$gem_fork_directory"
+if [ -d "$gem" ]
+then
+  echo "Already have a directory named $gem" >&2
+  exit 1
+fi
+git clone "$source_code" "$gem"
+echo cd "$gem_fork_directory/$gem"

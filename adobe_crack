@@ -1,0 +1,57 @@
+#!/bin/sh -e
+
+APP_DIR="/Applications"
+
+crack() {
+  FW="$1"
+  if [ ! -d  "$FW" ]; then
+    echo "No application $FW" >&2
+    exit 1
+  fi
+  BAKTMPL="$FW.bak"
+  if [ -d "$BAKTMPL" ]; then
+    N=0
+    BAK="$BAKTMPL$N"
+    while [ -d "$BAK" ]; do
+        N=$[N+1]
+      BAK="$BAKTMPL$N"
+    done
+  else
+    BAK="$BAKTMPL"
+  fi
+  mv -f "$FW" "$BAK"
+  cp -a "$APP_DIR/Adobe/Crack/amtlib.framework" "$FW"
+  echo "Patched $FW"
+}
+
+# After Effects is incompatible with Mavericks
+# Dreamweaver and Flash Builder and Flash  needs java
+TRYOUT_IMG="$APP_DIR/Adobe Illustrator CS6/Adobe Illustrator.app/Contents/Resources/ai_cs6_splash_tryout.png"
+RETAIL_IMG="$APP_DIR/Adobe Illustrator CS6/Adobe Illustrator.app/Contents/Resources/ai_cs6_splash.png"
+set -x
+if [ ! -h "$TRYOUT_IMG" ]; then
+  cp "$TRYOUT_IMG" "$TRYOUT_IMG.bak"
+  ln -sf "$RETAIL_IMG" "$TRYOUT_IMG" 
+  echo "Fixed Illustrator splash image"
+fi
+set +x
+
+while read FWNAME; do
+  crack "$FWNAME"
+done << EOF
+$APP_DIR/Adobe After Effects CS6/Adobe After Effects CS6.app/Contents/Frameworks/amtlib.framework
+$APP_DIR/Adobe Audition CS6/Adobe Audition CS6.app/Contents/Frameworks/amtlib.framework
+$APP_DIR/Adobe Bridge CS6/Adobe Bridge CS6.app/Contents/Frameworks/amtlib.framework
+$APP_DIR/Adobe Dreamweaver CS6/Adobe Dreamweaver CS6.app/Contents/Frameworks/amtlib.framework
+$APP_DIR/Adobe Encore CS6/Adobe Encore CS6.app/Contents/Frameworks/amtlib.framework
+$APP_DIR/Adobe Fireworks CS6/Adobe Fireworks CS6.app/Contents/Frameworks/amtlib.framework
+$APP_DIR/Adobe Flash Builder 4.6/eclipse/plugins/com.adobe.flexide.amt_4.6.1.335153/os/macosx/Frameworks/amtlib.framework
+$APP_DIR/Adobe Flash CS6/Adobe Flash CS6.app/Contents/Frameworks/amtlib.framework
+$APP_DIR/Adobe Illustrator CS6/Adobe Illustrator.app/Contents/Frameworks/amtlib.framework
+$APP_DIR/Adobe InDesign CS6/Adobe InDesign CS6.app/Contents/Frameworks/amtlib.framework
+$APP_DIR/Adobe Media Encoder CS6/Adobe Media Encoder CS6.app/Contents/Frameworks/amtlib.framework
+$APP_DIR/Adobe Photoshop CS6/Adobe Photoshop CS6.app/Contents/Frameworks/amtlib.framework
+$APP_DIR/Adobe Prelude CS6/Adobe Prelude CS6.app/Contents/Frameworks/amtlib.framework
+$APP_DIR/Adobe Premiere Pro CS6/Adobe Premiere Pro CS6.app/Contents/Frameworks/amtlib.framework
+$APP_DIR/Adobe SpeedGrade CS6/Adobe SpeedGrade CS6.app/Contents/Frameworks/amtlib.framework
+EOF

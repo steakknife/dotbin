@@ -1,0 +1,5 @@
+#!/bin/sh
+set -e
+# convert from stdin https://cc.dcsec.uni-hannover.de/ to parsable text
+
+grep -o 'User-Agent:</div><div class=['\''"]span8['\''"]>[^<]*<' | sed 's%User-Agent:</div><div class=['\''"]span8['\''"]>%%;s%<%%'

@@ -1,0 +1,90 @@
+#!/bin/sh
+set -e
+
+die() {
+    echo "$@" >&2
+    exit 1
+}
+
+uname | grep -q '^Darwin$' || die "$0 must run on OSX."
+
+UUID=`/usr/sbin/system_profiler SPHardwareDataType | /usr/bin/awk '/UUID/{print$3}'`
+JDK6_FULL_VERSION=`/usr/libexec/java_home --version 1.6 --exec java -version 2>&1 | /usr/bin/awk '/Runtime/{print$6}' | /usr/bin/cut -d- -f 1-3`
+[ -z "$JDK6_FULL_VERSION" ] && die "Could not locate the JDK6 version"
+JDK7_FULL_VERSION=`/usr/libexec/java_home --version 1.7 --exec java -version 2>&1 | /usr/bin/grep java | /usr/bin/cut -d'"' -f2`
+[ -z "$JDK7_FULL_VERSION" ] && die "Could not locate the JDK7 version" 
+JDK6_JVM_BUNDLE_ID=`/usr/libexec/java_home --version 1.6 -xml | /usr/bin/grep -o '[a-z0-9.]*java[a-z0-9.]*' | /usr/bin/uniq`
+[ -z "$JDK6_JVM_BUNDLE_ID" ] && die "Could not locate the JDK6 bundleid" 
+JDK7_JVM_BUNDLE_ID=`/usr/libexec/java_home --version 1.7 -xml | /usr/bin/grep -o '[a-z0-9.]*java[a-z0-9.]*' | /usr/bin/uniq`
+[ -z "$JDK7_JVM_BUNDLE_ID" ] && die "Could not locate the JDK7 bundleid" 
+JDK6_HOME="`/usr/libexec/java_home --version 1.6`"
+[ -z "$JDK6_HOME" ] && die "Could not locate the JDK6 home" 
+JDK7_HOME="`/usr/libexec/java_home --version 1.7`"
+[ -z "$JDK7_HOME" ] && die "Could not locate the JDK7 home" 
+
+setvm() {
+
+    base="$1"
+    plist="$base/Library/Preferences/ByHost/com.apple.java.JavaPreferences.$UUID.plist"
+    dir="`dirname \"$plist\"`"
+    /usr/bin/sudo mkdir -p "$dir"
+    user="`/usr/bin/sudo stat -s "$dir" | /usr/bin/sed 's/.*st_uid=\([0-9][0-9]*\) .*/\1/'`"
+    group="`/usr/bin/sudo stat -s "$dir" | /usr/bin/sed 's/.*st_gid=\([0-9][0-9]*\) .*/\1/'`"
+
+    if /usr/bin/sudo /usr/libexec/PlistBuddy -c 'Print :PreferredJVMOrder:Any:0:JVMVendor' "$plist" 2>/dev/null | /usr/bin/grep -q '^Oracle Corporation$' && \
+       /usr/bin/sudo /usr/libexec/PlistBuddy -c 'Print :PreferredJVMOrder:Any:0:JVMPlatformVersion' "$plist" 2>/dev/null | /usr/bin/grep -q '^1.7$'
+    then
+      echo " JVM is already set to JDK7" >&2
+      return 0
+    fi
+
+    if /usr/bin/sudo /usr/libexec/PlistBuddy -c 'Print :PreferredJVMOrder:Any' "$plist" >/dev/null 2>&1
+    then
+      /usr/bin/sudo /usr/libexec/PlistBuddy -c "Delete :PreferredJVMOrder:Any" "$plist" 
+    fi
+
+    # changing JDK from default
+
+    /usr/bin/sudo /usr/libexec/PlistBuddy -c "Add :PreferredJVMOrder Dict" "$plist" 2>/dev/null || true
+    /usr/bin/sudo /usr/libexec/PlistBuddy -c "Add :PreferredJVMOrder:Any array" "$plist"
+    /usr/bin/sudo /usr/libexec/PlistBuddy -c "Add :PreferredJVMOrder:Any:0 Dict" "$plist"
+    /usr/bin/sudo /usr/libexec/PlistBuddy -c "Add :PreferredJVMOrder:Any:0:JVMArch string x86_64" "$plist"
+    /usr/bin/sudo /usr/libexec/PlistBuddy -c "Add :PreferredJVMOrder:Any:0:JVMVersion string $JDK7_FULL_VERSION" "$plist"
+    /usr/bin/sudo /usr/libexec/PlistBuddy -c "Add :PreferredJVMOrder:Any:0:JVMPlatformVersion string 1.7" "$plist"
+    /usr/bin/sudo /usr/libexec/PlistBuddy -c "Add :PreferredJVMOrder:Any:0:JVMBundleID string $JDK7_JVM_BUNDLE_ID" "$plist"
+    /usr/bin/sudo /usr/libexec/PlistBuddy -c "Add :PreferredJVMOrder:Any:0:JVMVendor string 'Oracle Corporation'" "$plist"
+    /usr/bin/sudo /usr/libexec/PlistBuddy -c "Add :PreferredJVMOrder:Any:0:JVMHomePath string '$JDK7_HOME'" "$plist"
+    /usr/bin/sudo /usr/libexec/PlistBuddy -c "Add :PreferredJVMOrder:Any:1 Dict" "$plist"
+    /usr/bin/sudo /usr/libexec/PlistBuddy -c "Add :PreferredJVMOrder:Any:1:JVMArch string x86_64" "$plist"
+    /usr/bin/sudo /usr/libexec/PlistBuddy -c "Add :PreferredJVMOrder:Any:1:JVMVersion string $JDK6_FULL_VERSION" "$plist"
+    /usr/bin/sudo /usr/libexec/PlistBuddy -c "Add :PreferredJVMOrder:Any:1:JVMPlatformVersion string 1.6" "$plist"
+    /usr/bin/sudo /usr/libexec/PlistBuddy -c "Add :PreferredJVMOrder:Any:1:JVMBundleID string $JDK6_JVM_BUNDLE_ID" "$plist"
+    /usr/bin/sudo /usr/libexec/PlistBuddy -c "Add :PreferredJVMOrder:Any:1:JVMVendor string 'Apple Inc.'" "$plist"
+    /usr/bin/sudo /usr/libexec/PlistBuddy -c "Add :PreferredJVMOrder:Any:1:JVMHomePath string '$JDK6_HOME'" "$plist"
+    /usr/bin/sudo /usr/libexec/PlistBuddy -c "Add :PreferredJVMOrder:Any:2 Dict" "$plist"
+    /usr/bin/sudo /usr/libexec/PlistBuddy -c "Add :PreferredJVMOrder:Any:2:JVMArch string i386" "$plist"
+    /usr/bin/sudo /usr/libexec/PlistBuddy -c "Add :PreferredJVMOrder:Any:2:JVMVersion string $JDK6_FULL_VERSION" "$plist"
+    /usr/bin/sudo /usr/libexec/PlistBuddy -c "Add :PreferredJVMOrder:Any:2:JVMPlatformVersion string 1.6" "$plist"
+    /usr/bin/sudo /usr/libexec/PlistBuddy -c "Add :PreferredJVMOrder:Any:2:JVMBundleID string $JDK6_JVM_BUNDLE_ID" "$plist"
+    /usr/bin/sudo /usr/libexec/PlistBuddy -c "Add :PreferredJVMOrder:Any:2:JVMVendor string 'Apple Inc.'" "$plist"
+    /usr/bin/sudo /usr/libexec/PlistBuddy -c "Add :PreferredJVMOrder:Any:2:JVMHomePath string '$JDK6_HOME'" "$plist"
+
+    /usr/bin/sudo /usr/bin/plutil -convert binary1 "$plist" 
+    /usr/bin/sudo /usr/sbin/chown -R $user:$group "$dir"
+    echo "Done"
+}
+
+# for each user, try to change their preferences
+/usr/bin/dscl . list /Users UniqueID | /usr/bin/awk '{if($2>500){print$1}}' | while read -r username
+do
+  printf "Setting JDK7 for user $username : " >&2
+  homedir="`/usr/bin/dscl . read /Users/$username NFSHomeDirectory | /usr/bin/cut -d' ' -f2-`"
+  setvm "$homedir"
+done
+
+# also change the default preferences
+/usr/bin/sudo /usr/bin/find '/System/Library/User Template' -type d -name '*.lproj' -depth 1 | while read -r language
+do
+  printf "Setting JDK7 for language $language : " >&2
+  setvm "$language" 
+done

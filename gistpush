@@ -1,0 +1,45 @@
+#!/bin/sh -e
+# gistpush [-m commitmsg] gistnumber filename [filename_in_gist]
+
+NON_ARGS=''
+for ARG in "$@"; do
+  case "$ARG" in
+    -d|--debug) set -x ;;
+    -m|--message) shift; COMMIT_MESSAGE="$1" ;;
+    *) if [ -z "$GIST_NUMBER" ]; then
+         GIST_NUMBER="$ARG"
+       elif [ -z "$FILE" ]; then
+         FILE="$ARG"
+       elif [ -z "$GIST_FILE" ]; then
+         GIST_FILE="$ARG"
+       fi
+  esac
+  shift
+done
+
+if [ -z "$GIST_FILE" ]; then
+  GIST_FILE="$FILE"
+fi
+JUST_FILE="$(basename $GIST_FILE)"
+if [ -z "$JUST_FILE" ]; then
+  echo "usage: $0 gist_number filename [-m comment]"
+fi
+if [ -z "$COMMIT_MESSAGE" ]; then
+  COMMIT_MESSAGE="Update $JUST_FILE"
+fi
+
+GIT_URL="git@gist.github.com:$GIST_NUMBER.git"
+GIT_DIR="$HOME/.gistpush/$GIST_NUMBER"
+
+if [ -d "$GIT_DIR" ]; then
+  pushd "$GIT_DIR" >/dev/null
+  git pull
+  popd >/dev/null
+else
+  git clone "$GIT_URL" "$GIT_DIR"
+fi
+cp "$FILE" "$GIT_DIR/$JUST_FILE"
+cd "$GIT_DIR"
+git add "$JUST_FILE"
+git commit -m "$COMMIT_MESSAGE"
+git push

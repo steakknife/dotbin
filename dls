@@ -1,0 +1,5 @@
+#!/bin/sh
+ls "$1" > cur.txt
+ls "/Volumes/Macintosh HD/$1" > past.txt
+diff -u cur.txt past.txt | less
+rm -f cur.txt past.txt

@@ -1,0 +1,37 @@
+#!/bin/sh
+set -e
+if [ -z "$1" ]; then
+  echo "$0 webstoreid" >&2
+  exit 1
+fi
+METADATA_URL="https://clients2.google.com/service/update2/crx?x=id%3D$1%26uc" # add &response=redirect to redirect to begin actually downloading
+METADATA="$(curl -L "$METADATA_URL")"
+DOWNLOAD_URL="$(echo "$METADATA" | sed 's/.*codebase=\"//;s/\".*//')"
+FILE="$(basename "$DOWNLOAD_URL")"
+SHA256_HASH="$(echo "$METADATA" | sed 's/.*hash_sha256=\"//;s/\".*//')"
+curl -LO "$DOWNLOAD_URL"
+if [ -n "$SHA256_HASH" ]; then
+  if which shasum >/dev/null 2>&1; then
+    if shasum -a256 < "$FILE" | grep -q "$SHA256_HASH"; then
+      echo "sha256 OK" >&2
+    else
+      echo "Hash failure" >&2
+      rm -f "$FILE"
+      exit 1
+    fi
+  elif which sha256sum >/dev/null 2>&1; then
+    if sha256sum < "$FILE" | grep -q "$SHA256_HASH"; then
+      echo "sha256 OK" >&2
+    else
+      echo "Hash failure" >&2
+      rm -f "$FILE"
+      exit 1
+    fi
+  else
+    echo "sha256 hash program missing, EXTENSION DOWNLOAD UNVERFIED!" >&2
+    exit 1
+  fi
+else
+  echo "sha256_hash metadata missing, EXTENSION DOWNLOAD UNVERFIED!" >&2
+  exit 1
+fi

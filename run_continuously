@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+set -e
+
+MY_DIR="$(dirname $0)"
+export PATH="$PATH:$MY_DIR"
+
+INTERNET=0
+
+detect_internet() {
+  if internet_access; then
+    INTERNET=1
+  else
+    INTERNET=0
+  fi
+}  
+
+handle_internet() {
+  if [ "$INTERNET_LAST" = "$INTERNET" ]; then
+    return
+  fi
+
+  case "$INTERNET" in
+    1)
+      trigger_enable_dnscrypt_proxy
+      echo "Internet detected"
+      ;;
+    0)
+      trigger_disable_dnscrypt_proxy
+      echo "Internet unavailable"
+      ;;
+  esac
+  INTERNET_LAST="$INTERNET"
+}
+
+while true; do
+  detect_internet
+  handle_internet
+  sleep 5
+done

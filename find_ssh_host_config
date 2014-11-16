@@ -1,0 +1,139 @@
+#!/usr/bin/env python
+
+"""
+
+find_ssh_host_name.py
+
+Given a hostname on the command line, return the hostname from standard ssh_config sources on stdout. 
+
+
+(c) 2011 Barry Allard <barry@barryallard.name>
+
+MIT License
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+http://www.opensource.org/licenses/mit-license.php
+
+"""
+
+import sys
+import os
+import os.path
+import re
+
+def parse_ssh_config(f):
+    """
+    Parse an ssh_config file per http://linux.die.net/man/5/ssh_config
+ 
+
+    f is read a file until EOF
+  
+    Returns a tuple = ( { global options } , { per-host options } )
+    """
+    # Read file as a list of strings.
+    lines = f.readlines()
+
+    # Remove all comments.
+    lines = map(lambda line: re.sub('#.*$', '', line), lines)
+
+    # Strip all whitespace, right and left sides.
+    lines = map(str.strip, lines)
+
+    # Remove all lines with no remaining characters.
+    lines = [ line for line in lines if len(line) > 0 ]
+
+    # Split on = or whitespace as a list of list of strings.
+    newlines = []
+    choice = re.compile('^[^\s]*=')
+    for line in lines:
+        if choice.match(line):
+            newline = re.split('=', line, maxsplit=1)
+        else:
+            newline = re.split('\s', line)
+        newlines.append(newline)
+    del lines
+    lines = newlines
+
+    # Title Case the first element
+    for line in lines:
+        line[0] = line[0].title()
+
+    # Global options
+    ssh_globals = {}
+    # Options per host
+    ssh_hosts = []
+    # Name of current host
+    ssh_host = None
+    # Options list of current host (dict)
+    ssh_host_options = None
+
+    for line in lines:
+        key = line[0]
+        value = ' '.join(line[1:])
+        if key == 'Host':
+            if ssh_host:
+                for host in ssh_host:
+                    ssh_hosts.append((host,ssh_host_options))
+                ssh_host = None
+                ssh_host_options = None
+            ssh_host = value.split() # Host can contain multiple entries
+            ssh_host_options = {}
+        elif ssh_host:
+            ssh_host_options[key] = value
+        else: # global section
+            ssh_globals[key] = value
+    # Add remaining open host options
+    if ssh_host:
+        for host in ssh_host:
+            ssh_hosts.append((host,ssh_host_options))
+        ssh_host = None
+        ssh_host_options = None
+    return (ssh_globals, ssh_hosts)
+
+
+def find_host(host, ssh_config):
+    ssh_globals, ssh_hosts = ssh_config
+    for cur_host, cur_host_options in ssh_hosts:
+        cur_host = '(?i)'+cur_host.replace('.', '\\.').replace('*','.*')+'$'
+        if re.match(cur_host, host) and cur_host_options.has_key('Hostname'):
+            return cur_host_options['Hostname'] 
+    return None
+
+
+def try_files(func, file_list):
+    f = None
+    try: 
+        for file_name in file_list:
+            if os.path.exists(file_name):
+                f = file(file_name,'r')
+                result = func(f)
+                f.close()
+                f = None
+                if result:
+                    return result
+    finally:
+        if f:
+            f.close()
+            f = None
+
+def main():
+    host = sys.argv[1]
+
+    ssh_config_files = [ 
+        os.path.join(os.environ['HOME'], '.ssh', 'config'),   # per user
+        os.path.join('/', 'etc', 'ssh', 'ssh_config'),        # system-wide (Linux and *BSD)
+        os.path.join('/', 'private', 'etc', 'ssh_config'),    # system-wide (Mac)
+    ]
+
+    result = try_files(lambda f: find_host(host, parse_ssh_config(f)), ssh_config_files)
+    print result or host
+    return result
+
+if __name__ == "__main__":
+    result = main()
+    sys.exit(int(not result))

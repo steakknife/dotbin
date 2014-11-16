@@ -1,0 +1,14 @@
+#!/bin/sh
+
+newmac=`openssl rand -hex 6 | sed 's/\(..\)/\1:/g; s/.$//'`
+if=en1
+
+echo "Was"
+ifconfig $if | grep ether | grep -v grep
+
+echo "Changing to $newmac"
+sudo ifconfig $if ether $newmac
+sudo ifconfig $if Wi-Fi $newmac 2>/dev/null
+
+echo "Now"
+ifconfig $if | grep ether | grep -v grep

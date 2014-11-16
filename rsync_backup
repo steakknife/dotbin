@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+set -e
+
+SRC='/Volumes/Macintosh HD/'
+DST='/Volumes/Macintosh HD backup/'
+TMP="$DST/.rsynctemp"
+
+if ! rsync -v 2>&1 | grep -q 'version 3.1.0'; then
+  echo "rsync 3.1.0 not available" >&2
+  echo >&2
+  echo "run:   brew install https://raw.github.com/Homebrew/homebrew-dupes/master/rsync.rb" >&2
+  exit 1
+fi
+
+if [ ! -d "$DST" ]; then
+  echo "$DST is not available" >&2
+  exit 1
+fi
+
+# become root if needed
+test $UID = 0 || exec sudo "$0" "$@"
+
+trap 'RESULT=$?; rm -rf "$TMP"; exit $RESULT' INT EXIT ERR QUIT TERM
+
+if ! mkdir "$TMP"; then
+  echo "$TMP already exists.  $0 running elsewhere?" >&2
+  exit 1
+fi 
+
+if [ "$1" = '-d' ]; then
+  OTHER_RSYNC_OPTIONS='--dry-run'
+fi
+LAST_LINE="$(grep -n 'END' "$0" | tail -1 | cut -f1 -d: )"
+
+rsync -axv --delay-updates --delete-after \
+  --exclude-from=<( sed 1,${LAST_LINE}d "$0" ) \
+  --fileflags \
+  $OTHER_RSYNC_OPTIONS \
+  --temp-dir="$TMP" \
+  "$SRC" "$DST"
+
+exit # END
+.fseventsd/**
+.Spotlight-V100/**
+/private/var/folders/**
+/private/var/vm/**
+/private/var/run/**
+/private/tmp/**
+/usr/local/var/run/**
+/Library/Caches/com.apple.Spotlight/**
+/Library/Caches/com.sophos.sau/**
+/Library/Caches/com.sophos.sxld/**
+/Library/Caches/Homebrew/**
+/Users/*/Library/Application Support/Dash/DocSets/**
+/Users/*/Library/Caches/Firefox/Profiles/**/Cache/**
+/Users/*/Downloads/**
+/Users/*/.Trash/

@@ -1,0 +1,34 @@
+#!/bin/sh
+set -e
+
+trap 'rm -f /tmp/gem.list /tmp/gem.list.new' EXIT ERR QUIT TERM
+
+gem list | grep ' (.*' | sed 's/ (.*//g' > /tmp/gem.list
+
+while [ ${#} -gt 0 ]
+do
+  if grep -qs "${1}" /tmp/gem.list
+  then
+    echo "keep gem ${1}"
+    grep -v "^${1}\$" /tmp/gem.list > /tmp/gem.list.new || true
+    mv /tmp/gem.list.new /tmp/gem.list
+  else
+    echo "gem ${1} not found, skipping"
+  fi
+  shift
+done
+
+if ! grep -qs '[a-z]' /tmp/gem.list
+then
+  echo "nothing to do"
+  exit
+fi
+
+echo going to uninstall the following gems:
+cat /tmp/gem.list
+echo
+echo 'is this correct? [Yn]' ; read prompt
+
+[ "${prompt}" != 'Y' ] && [ "${prompt}" != 'y' ] && exit 1
+
+cat /tmp/gem.list | xargs gem uninstall -ax 

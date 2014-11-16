@@ -1,0 +1,12 @@
+#!/bin/sh
+set -e
+set -x
+
+TEMPL="`mktemp -t pipediff`"
+TEMPR="`mktemp -t pipediff`"
+trap "rm -f $TEMPL $TEMPR" INT ERR QUIT TERM
+cat "$1" > "$TEMPL"
+shift
+cat "$1" > "$TEMPR"
+shift
+diff "$@" "$TEMPL" "$TEMPR"

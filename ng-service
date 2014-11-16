@@ -1,0 +1,118 @@
+#!/bin/sh -e
+
+DESCRIPTION="JRuby Nailgun Server"
+ARGS="--ng-server"
+
+# ARGS="$ARGS -Xcompat.version=1.8"
+ARGS="$ARGS -Xcompat.version=1.9"
+ARGS="$ARGS -Xmn512m -Xms2048m -Xmx2048m" # heap and stack
+ARGS="$ARGS -J-Djruby.thread.pooling=true" # Enable thread pooling
+ARGS="$ARGS -J-Djruby.objectspace.enabled=false" # Disable ObjectSpace
+
+## Running without nailgun
+#ARGS=""
+##ARGS="$ARGS --server" # server runtime
+##ARGS="$ARGS --client" # client runtime
+##ARGS="$ARGS --1.8" # Ruby 1.8
+#ARGS="$ARGS --1.9" # Ruby 1.9
+##ARGS="$ARGS -J-Xmn512m -J-Xms2048m -J-Xmx2048m" # heap and stack
+##ARGS="$ARGS -J-Djruby.thread.pooling=true" # Enable thread pooling
+##ARGS="$ARGS -O" # Disable ObjectSpace
+
+get_pid() {
+  PIDS="`ps -ewwopid,command | sed '/grep/d;/NGServer/!d;s/^[\t ]*\([0-9]*\).*/\1/g'`"
+  if [ -z "$PIDS" ]; then
+    false
+  else
+    echo "$PIDS"
+  fi
+}
+
+started() {
+  get_pid >/dev/null
+}
+
+start() {
+  if started; then
+    echo "$DESCRIPTION is already running." >&2
+    false
+    return
+  fi
+  echo starting jruby $ARGS
+  nohup \jruby $ARGS | cat &
+  sleep 1
+  if ! started; then
+    echo "$DESCRIPTION failed to start." >&2
+    false
+    return
+  fi
+}
+
+stop() {
+  if ! started; then
+    echo "$DESCRIPTION is already stopped." >&2
+    false
+    return
+  fi
+  get_pid | xargs kill
+  sleep 1
+  if started; then
+    get_pid | xargs kill -9
+    sleep 1
+    if started; then
+      echo "$DESCRIPTION failed to stop." >&2
+      false
+      return
+    fi
+  fi
+}
+
+status() {
+  if started; then
+    echo "$DESCRIPTION is running" >&2
+  else
+    echo "$DESCRIPTION is stopped" >&2
+    false
+  fi
+}
+
+restart() {
+  stop && start
+}
+
+condrestart() {
+  started && stop && start
+}
+
+usage() {
+  cat << EOS
+
+  Usage: ng {start|stop|status|try-restart|condrestart|restart|usage}
+
+  JRuby Nailgun Server
+
+EOS
+}
+
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    start|stop|status|try-restart|condrestart|restart|usage)
+      COMMAND="$1"
+      ;;
+    *)
+      ARGS="$ARGS $1"
+      ;;
+  esac
+  shift
+done
+
+case "$COMMAND" in
+  start)                   start       ;;
+  stop)                    stop        ;;
+  status)                  status      ;;
+  condrestart|try-restart) condrestart ;;
+  restart)                 restart     ;;
+  *)                       usage       ;;
+esac
+

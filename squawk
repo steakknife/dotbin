@@ -1,0 +1,75 @@
+#!/bin/sh
+set -e
+
+processed_file=0
+
+usage() {
+  cat >&2 << USAGE
+    $@
+
+    usage: $(basename $0) file(s) to edit in place --- [awk_argument]* 
+USAGE
+  exit 1
+}
+
+spinner()
+{
+  PROCESS=$1
+  icons=''
+
+  printf '|'
+
+  while ps -opid | grep -qs "^$PROCESS$" 
+  do
+    sleep 0.01
+
+    icon=$(echo "$icons" | head -c 1)
+
+    printf "$icon"
+    printf '\b'
+    icons=$(echo "$icons" | cut -c2-)
+    [ "$icons" = '' ] && icons="/-\\|"
+  done
+
+  printf ' '
+}
+
+    tmpfilename="`mktemp -t XXXXXX`"
+    filenames="`mktemp -t XXXXXX`"
+trap "saved=$?;srm \"$tmpfilename\" \"$filenames\" 2>/dev/null;exit $saved" EXIT QUIT INT TERM ERR
+
+touch "$filenames"
+while [ ! "$#" = "0" ]
+do
+  if [ "$1" = '---' ]
+  then
+    shift
+    break
+  else
+    echo "$1" >> "$filenames"
+  fi
+  shift
+done
+
+
+while read -r filename 
+do
+  printf "awk %s %s ... " "$@" "$filename" 
+  { awk "$@" "$filename" > "$tmpfilename" && cp "$tmpfilename" "$filename" ; sleep 4 ;} &
+  spinner $!
+  echo ' Done.'
+  processed_file=1
+done < "$filenames"
+
+srm "$tmpfilename" "$filenames" 2>/dev/null
+trap - EXIT QUIT INT TERM ERR
+
+if [ "$#" = "0" ] 
+then
+  usage "missing magic separater switch '---' :"
+elif [ "$processed_file" = "0" ]
+then
+  usage "missing file(s) to awk edit in place :"
+fi
+
+exit 0

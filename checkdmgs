@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -e
+if [ "$1" = 'reset' ]; then
+  find . -name '*.good' -delete
+  find . -name '*.bad' -delete
+fi
+find . -name '*.dmg' | grep -v '/\._' | while read -r FILENAME; do
+  if [ -e "$FILENAME".good ]; then
+    echo "Skipping $FILENAME already checked" >&2
+  else
+    if hdiutil verify "$FILENAME"; then
+      echo "$FILENAME good" >&2
+      touch "$FILENAME".good 
+      rm -f "$FILENAME".bad
+    else
+      echo "$FILENAME BAD!" >&2
+      rm -f "$FILENAME".good 
+      touch "$FILENAME".bad
+    fi
+  fi
+done

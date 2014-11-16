@@ -1,0 +1,6 @@
+#!/bin/sh
+# Usage: addr6 [<if>]
+# Show IPv6 address for interface <if> or all interfaces with
+# no <if> given.
+
+ifconfig ${@:--a} inet6 | sed '/inet6 /!d;s/.*inet6 \([^ ]*\) .*/\1/g;/::1%/d;/^::1$/d'

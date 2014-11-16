@@ -1,0 +1,124 @@
+#!/usr/bin/env ruby
+# install-default-npm
+require 'yaml'
+
+# no operator precedence!
+
+HOME = ENV['HOME'] || ENV['HOMEDIR']
+DEBUG = ENV['DRY_RUN']
+
+FILES = ['/etc/default-npm.yaml', '/usr/local/etc/default-npm.yaml', File.join(HOME, '.default-npm.yaml')]
+NPM_INSTALL = ['npm', 'install', '-g']
+
+ALL_OSES = 'solaris freebsd openbsd netbsd linux osx windows'
+OR_OPERATORS = '|| | or'
+AND_OPERATORS = '&& & and'
+NOT_OPERATORS = '! ~ ^ - not'
+
+def debug(*args)
+  puts args if $DEBUG
+end
+
+def os
+  uname = `uname`.chop.downcase
+  case uname
+  when 'solaris', 'freebsd', 'netbsd', 'linux'
+    uname
+  when 'darwin'
+    'osx'
+  when 'cygwin', RUBY_PLATFORM =~ /win(32|dows|ce)|(ms|cyg|bcc)win|mingw32|djgpp/i || ENV['OS'] == 'Windows_NT'
+    'windows'
+  else
+    'unknown'
+  end
+end
+
+def match?(string)
+  result = false
+  first = true
+  operator = :or
+  tokens = string.downcase.split
+  fail 'missing tokens' if tokens.empty?
+  debug "processing #{tokens}"
+  tokens.each {|token|
+    if first
+      return true if 'standard' == token
+    else # not first
+      if OR_OPERATORS.include? token 
+        operator = :or
+        next
+      elsif AND_OPERATORS.include? token 
+        operator = :and
+        next
+      elsif NOT_OPERATORS.include? token
+        if operator == :and
+          operator = :not_and 
+        elsif operator == :or
+          operator = :not_or
+        else
+          fail 'Bad placement of a not operator'
+        end
+        next
+      end
+    end
+
+    if '!^-~'.include? token[0]
+      token = token[1..-1]
+      invert = true
+    else
+      invert = false
+    end
+
+    current = if ALL_OSES.include?(token)
+      os == token
+    else
+      fail 'invalid os' 
+    end
+
+    current = !current if invert
+
+    case operator
+    when :or
+      result ||= current
+    when :and
+      result &&= current
+    when :not_or
+      result ||= !current
+    when :not_and
+      result &&= !current
+    end
+
+    operator = :or
+    first = false
+  }
+  debug "match? #{string} = #{result}"
+  result
+end
+
+def npm_install(*npms)
+  args = NPM_INSTALL + npms.flatten
+  puts args.join ' '
+  unless ENV['DRY_RUN']
+    system(*args)
+    fail 'npm install failed' unless $?.success?
+  end
+end
+
+def run_file(filename)
+  debug "running #{filename}"
+  npms = []
+  YAML.load_file(filename).each { |item|
+    if item.is_a? Hash
+      item.each { |npm, condition| 
+        npms << npm if match? condition
+      }
+    else
+      npms << item
+    end
+  }
+  npm_install npms
+end
+
+debug "os=#{os}"
+
+FILES.each {|filename| run_file(filename) if File.exist?(filename) }

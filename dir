@@ -1,0 +1,2 @@
+#!/bin/sh
+exec find "$@" -exec env F="{}" sh -c 'exec stat -f "%Sp %Z %N%SY $(shasum -a256 "$F" 2>/dev/null | cut -d" " -f1 || true)" "$F"' \; | sed "s%$@/%%g"

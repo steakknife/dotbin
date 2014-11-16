@@ -1,0 +1,10 @@
+#!/bin/sh
+#usage: tcprepare <#garbage> <#keyfiles>
+
+for GNO in `seq $1`; do
+   touch "garbagefile`printf "%06d" $RANDOM`"
+done
+
+for KNO in `seq $2`; do
+   dd if=/dev/random of="garbagefile`printf "%06d" $RANDOM`" bs=1024 count=1024
+done

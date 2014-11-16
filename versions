@@ -1,0 +1,424 @@
+#!/usr/bin/env bash
+set -e
+# if everyone implemented http://foo.org/release/current, this would be a one-liner
+
+CLEAN_FILES=''
+
+trap 'RESULT=$?; rm -rf "$CLEAN_FILES"; exit $RESULT' INT TERM EXIT ERR QUIT
+
+
+# requires: ruby curl egrep openssl bash diff mktemp egrep grep sed head tail sort cat cut
+
+has_command() {
+  which "$@" >/dev/null 2>&1
+}
+
+stderr() {
+  echo "$@" >&2
+}
+
+warn() {
+  [ -n "$SILENT" ] && return
+  stderr "$@"
+}
+
+note() {
+  warn "Note: $@"
+}
+
+die() {
+  warn "$@"
+  exit 1
+}
+
+match() {
+  if [ -n "$UNCACHABLE" ]; then
+    cat
+  else
+    egrep --color=none "$@"
+  fi
+}
+
+note_insecure() {
+  note "$@ signs releases but does not provide downloads over HTTPS.  Be sure to verify releases with GPG and/or hashes from trusted mechanisms."
+}
+
+_fetch_load_headers() {
+  LAST_MODIFIED="`grep -i 'last-modified' "$HEADERS_FILE" 2>/dev/null | sed 's/[^:]*:[ ]*//;s/[^A-Za-z0-9:, -]//g'`"
+  #ETAG="`grep -i 'etag' "$HEADERS_FILE" 2>/dev/null | sed 's/[^:]*:[ ]*//;s/[^A-Za-z0-9:, -]//g'`"
+}
+
+_fetch_offline() {
+  test -e "$CACHED_FILE" || die "$1 unavailable"
+  warn "$1 using cached, may not be current"
+  cat "$CACHED_FILE"
+}
+
+_curl() {
+  # prevent user-agent bias
+  USER_AGENT='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9) AppleWebKit/537.71 (KHTML, like Gecko) Version/7.0 Safari/537.71'
+
+  # avoid bourne shell header mangling (no permutation of quoting will work)
+  if [ -n "$DEBUG" ]; then
+    CURL_OPTS='-v0L'
+  else
+    CURL_OPTS='-s0L'
+  fi
+  if [ -n "$LAST_MODIFIED" ]; then
+    curl $CURL_OPTS -A "$USER_AGENT"                               -H "If-Modified-Since: $LAST_MODIFIED" "$@"
+  else
+    curl $CURL_OPTS -A "$USER_AGENT"                                                                      "$@"
+  fi
+}
+
+_fetch_handle_unmodified() {
+  if [ "$(wc -c < "$CACHED_FILE")" = 0 ]; then
+    warn "$1 unavailable"
+    return 1
+  fi
+
+
+  # cached data is valid, cleanup whatever _curl downloaded
+  rm -f "$CACHED_FILE_TEMP" "$HEADERS_FILE_TEMP"
+
+
+  if [ -n "$DEBUG_CACHE" ]; then
+    stderr "$1 cached content is current"
+    echo "$(( $(cat "$DEBUG_CACHE_CURRENT_FILE") + 1))" > "$DEBUG_CACHE_CURRENT_FILE"
+  fi
+  if [ -n "$UNCACHABLE" ]; then
+    stderr "$1 is cachable"
+    return
+  fi
+}
+
+_fetch_handle_uncachable_or_modified() {
+  # if nothing was downloaded
+  if [ ! -e "$CACHED_FILE_TEMP" ] || [ "$(wc -c < "$CACHED_FILE_TEMP")" = 0 ]; then
+    warn "$1 unavailable"
+    return 1
+  fi
+
+  # if no headers were returned
+  if [ ! -e "$HEADERS_FILE_TEMP" ]; then
+    stderr "$HEADERS_FILE_TEMP does not exist"
+  fi
+
+  # overwrite any existing body with the fresh body 
+  mv "$CACHED_FILE_TEMP" "$CACHED_FILE"
+
+  # overwrite corresponding existing headers with fresh headers
+  mv "$HEADERS_FILE_TEMP" "$HEADERS_FILE"
+
+  # if testing for cachability
+  if [ -n "$UNCACHABLE" ]; then
+    if diff "$CACHED_FILE".tmp "$CACHED_FILE" >/dev/null 2>&1; then
+      echo "cachable"
+    else
+      echo "uncachable"
+    fi
+    return
+  fi
+  if [ -n "$DEBUG_CACHE" ]; then
+    stderr "$1 cached content stale or uncacheable"
+    echo "$(( $(cat "$DEBUG_CACHE_UNKNOWN_FILE") + 1))" > "$DEBUG_CACHE_UNKNOWN_FILE"
+  fi
+}
+
+fetch() {
+  if [ -n "$DISABLE_CACHE" ]; then
+    _curl "$2"
+    return
+  fi
+
+  OBJ_DIR="$HOME/.versions/$1"
+  HEADERS_FILE="$OBJ_DIR/headers"
+  HEADERS_FILE_TEMP="$OBJ_DIR/headers.tmp"
+  CACHED_FILE="$OBJ_DIR/cached"
+  CACHED_FILE_TEMP="$OBJ_DIR/cached.tmp"
+
+  if [ -n "$OFFLINE" ]; then
+    _fetch_offline "$1"
+    return
+  fi
+
+
+  # prepare for caching and results
+  mkdir -p "$OBJ_DIR"
+
+  # if cached, grab the Last-Modified and Etag fields (might want Expires too)
+  _fetch_load_headers
+  _curl -D "$HEADERS_FILE_TEMP" "$2" -o "$CACHED_FILE_TEMP"
+
+  # Is the result not modified?
+  if grep -qi ' 304 ' "$HEADERS_FILE_TEMP"; then
+    _fetch_handle_unmodified "$1" || return
+  else
+    _fetch_handle_uncachable_or_modified "$1" || return
+  fi
+
+  # if we got here, then the cached file is valid or cached
+  cat "$CACHED_FILE"
+}
+
+github() {
+  FILTER="${2-[0-9][^\"]*}"
+  #fetch https://github.com/$1/releases | grep tag-name | egrep -iv '(rc|pre|wip|beta|alpha)' | grep -o "$FILTER" | head -1
+#  echo "FILTER='$FILTER'"
+  fetch github/$1 https://github.com/$1/releases | match -o '/releases/tag/[^"]*">' | match -o "$FILTER" | match -v '(alpha|beta|rc|wip|pre)' | sort_versions | tail -1
+}
+
+googlecode() {
+  FILTER="${2-[0-9][0-9\.]*\.[0-9\.]*[0-9]}"
+  fetch googlecode/$1 https://code.google.com/p/$1/downloads/list | match -A5 '<td class="vt col_1" width="100%"' | match -o "$FILTER" | head -1
+}
+
+
+sf_raw() {
+  fetch "sf/$1/$2" "http://sourceforge.net/projects/$1/files/$2"
+}
+
+sf() {
+  if [ -n "$2" ]; then
+    FILTER="$2"
+  else
+    FILTER="[0-9][0-9]*\.[0-9\.]*[0-9]"
+  fi
+  sf_raw "$1" "$3" | match -A2 'Looking for the latest version?' | match -o "$FILTER" | head -1
+}
+
+pypi() {
+  fetch "pypi/$1" https://pypi.python.org/pypi/$1 | match -o "$1 [0-9][0-9]*\.[0-9\.]*[0-9]" | match -o '[0-9][0-9]*\.[0-9\.]*[0-9]' | head -1
+}
+
+npm() {
+  fetch "npm/$1" https://npmjs.org/package/$1 | match -o -A4 '<th>Version</th>' | match -o '[0-9][0-9]*\.[0-9\.]*[0-9]'
+}
+
+freedesktop() {
+  FILTER="${2-[0-9]*\.[\.0-9]*[0-9]}"
+  fetch freedesktop/$1 http://$1.freedesktop.org/releases/ | match -o "$1-$FILTER" | sort -u |  sort_versions | tail -1 | match -o "$FILTER"
+}
+
+stable() {
+  if [ -z "$HEAD" ] && [ -z "$PRE" ]; then
+    echo "STABLE" >&2
+    "$@"
+  else
+    :;
+  fi
+}
+
+preview() {
+  if [ -n "$PRE" ]; then
+    "$@"
+  fi
+}
+
+head() {
+  if [ -n "$HEAD" ] && [ -z "$PRE" ]; then
+    "$@"
+  fi
+}
+
+sort_versions() {
+  ruby -e '
+def cmppart(x, y)
+  x =~ /([0-9]*)(.*)/
+  x_n = $1.to_i
+  x_t = $2
+  y =~ /([0-9]*)(.*)/
+  y_n = $1.to_i
+  y_t = $2
+  if (x_n == y_n) 
+    if (x_t == y_t)
+      return 0
+    elsif (x_t < y_t)
+      return -1
+    else
+      return 1
+    end
+  elsif (x_n < y_n)
+    return -1
+  else
+    return 1
+  end
+end
+def cmp(left, right)
+  lparts = left.split(".")
+  rparts = right.split(".")
+
+  if lparts.length < rparts.length
+    lparts, rparts = rparts, lparts
+    swap = true
+  end
+  lparts.zip(rparts).map do |l,r|
+    if (!l.nil? && r.nil?) || cmppart(l,r) > 0
+      return (swap) ? -1 : 1
+    elsif (l.nil? && !r.nil?) || cmppart(l,r) < 0
+      return (swap) ? 1 : -1
+    end
+  end
+  return 0
+end
+puts STDIN.read.split("\n").sort { |l,r| cmp(l,r) }
+'
+}
+
+gnu_alpha() {
+  FILTER="${2-[0-9][0-9]*\.[0-9][0-9\.a-z]*}"
+  fetch gnu_alpha/$1 http://alpha.gnu.org/gnu/$1/ | match -o "$1-[0-9\.a-z]*\.tar" | match -o "$FILTER" | sed 's/.tar.*//g' | sort -u | sort_versions | tail -1
+}
+
+gnu() {
+  FILTER="${2-[0-9][0-9]*\.[0-9][0-9\.a-z]*}"
+  fetch gnu/$1 https://ftp.gnu.org/gnu/$1/ | match -o "$1-[0-9\.a-z]*\.tar" | match -o "$FILTER" | sed 's/.tar.*//g' | sort -u | sort_versions | tail -1
+}
+
+gnu_savannah() {
+  FILTER="${2-[0-9][0-9\.]*[0-9]}"
+  fetch gnu_savannah/$1 http://download.savannah.gnu.org/releases/$1/ | match -o "$1-[0-9\.a-z]*\.tar" | match -o "$FILTER" | sed 's/.tar.*//g' | sort -u | sort_versions | tail -1
+}
+
+versions_zlib_stable() {
+  fetch zlib https://api.github.com/repos/madler/zlib/tags | match 'name' | match -v 'pre' | match --color=none -o '[0-9][0-9\.]*'
+}
+
+versions_zlib_preview() {
+  fetch zlib https://api.github.com/repos/madler/zlib/tags | match 'name' | match --color=none -o '[0-9][0-9\.]*-pre[0-9]*'
+}
+
+# github_commits_on_page <user>/<repo> <page>
+github_commits_on_page() {
+}
+
+github_commits_on_page() {
+}
+
+versions_head() {
+}
+
+versions_zlib() {
+  stable  versions_zlib_stable
+  preview versions_zlib_preview
+  head    versions_zlib_head
+}
+
+
+versions_openssl() {
+  stable fetch openssl https://www.openssl.org/source/ | match -o '<a href="openssl-[0-9][^>]*[0-9a-z].tar.gz">' | match -v 'beta' | sed 's/[^-]*-//;s/\.ta.*//'
+  preview fetch openssl https://www.openssl.org/source/ | match -o '<a href="openssl-[0-9][^>]*[0-9a-z].tar.gz">' | match 'beta' | sed 's/[^-]*-//;s/\.ta.*//'
+}
+
+
+# browsers
+
+#################
+
+parameters() {
+  grep -o 'versions_[a-z0-9_]*' "$0" | sed 's/versions_//g;/^$/d' | sort
+}
+
+help() {
+  cat << HELP
+
+$0 [arguments] {package}+
+
+   -h   help
+
+   -d   debug information
+   -s   silence warnings
+   -o   offline operation
+
+  Valid packages ('all' to list all):
+HELP
+  parameters | sed 's/^/    /g'
+  echo
+}
+
+_run() {
+  versions_$PACKAGE
+}
+
+run() {
+  PACKAGE="$1"
+  if ! parameters | grep -q "^$PACKAGE$"; then
+    PACKAGE=`echo $PACKAGE | tr '-' '_'`
+    if ! parameters | grep -q "^$PACKAGE$"; then
+      die "unknown package: $PACKAGE"
+    fi
+  fi
+  _run
+}
+
+# code execution
+
+main() {
+  if [ -n "$ALL" ]; then
+    NON_ARGS="$NON_ARGS `parameters`"
+  fi
+
+  for PARAM in $NON_ARGS; do
+    run "$PARAM"
+  done
+}
+
+# preflight checks
+
+has_command curl || die "curl is missing"
+
+NON_ARGS=""
+
+if [ -z "$1" ]; then
+  HELP=1
+fi
+
+for ARGV in "$@"; do
+  case "$ARGV" in
+  --head|--HEAD)           HEAD=1 ;;
+  --pre)                   PRE=1 ;;
+  -d|--debug)              DEBUG=1   ;;
+  -C|--disable-cache)      DISABLE_CACHE=1 ;;
+  -c|--cache-debug)        DEBUG_CACHE=1 ;;
+  -h|-\?|help|--help)      HELP=1    ;;
+  -o|--offline)            OFFLINE=1 ;;
+  -s|-q|--silent|--quiet)  SILENT=1  ;;
+  -*)                      die "Unknown option $ARGV" ;;
+  all)                     ALL=1     ;;
+  broken)                  BROKEN=1; ALL=1 ;;
+  uncachable)              UNCACHABLE=1; ALL=1 ;; # ?
+  *)                       NON_ARGS="$NON_ARGS $ARGV"
+  esac
+done
+
+if [ -n "$DEBUG" ]; then
+  set -x
+fi
+
+ANY_UPDATED_FILE="$(mktemp -t XXXXXXX)"
+CLEAN_FILES="$CLEAN_FILES \"$ANY_UPDATED_FILE\""
+
+if [ -n "$DEBUG_CACHE" ]; then
+  DEBUG_CACHE_CURRENT_FILE="$(mktemp -t XXXXXXX)"
+  echo 0 > "$DEBUG_CACHE_CURRENT_FILE"
+  DEBUG_CACHE_UNKNOWN_FILE="$(mktemp -t XXXXXXX)"
+  echo 0 > "$DEBUG_CACHE_UNKNOWN_FILE"
+  CLEAN_FILES="$CLEAN_FILES \"$DEBUG_CACHE_CURRENT_FILE\" \"$DEBUG_CACHE_UNKNOWN_FILE\""
+fi
+
+if [ -n "$HELP" ]; then
+  help >&2
+  exit 1
+fi
+
+
+if [ -n "$BROKEN" ]; then
+  main | grep -v ' ..*'
+else
+  main 
+fi
+
+if [ -n "$DEBUG_CACHE" ]; then
+  stderr "$(cat $DEBUG_CACHE_CURRENT_FILE) cached package(s)"
+  stderr "$(cat $DEBUG_CACHE_UNKNOWN_FILE) package(s) required a full download (outdated or uncachable)"
+fi

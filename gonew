@@ -1,0 +1,35 @@
+#!/bin/sh
+set -e
+package="$1"
+if [ -z $package ]; then
+    echo "Missing package name" >&1
+    exit 1
+fi
+if [ -n "$2" ]; then
+    shift
+    imports="$@"
+fi
+mkdir $package
+cd $package
+
+cat << CODE > $package.go
+package $package
+CODE
+if [ "$imports" != "" ]; then
+    echo 'import (' >> $package.go
+    for import in $imports; do
+        echo "    \"$import\"" >> $package.go
+    done
+    echo ')' >> $package.go
+fi
+
+cat << TEST > ${package}_test.go
+package $package
+
+import (
+    "testing"
+)
+
+func Test0(t *testing.T) {
+}
+TEST

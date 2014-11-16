@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+URL="$1"; shift
+trap 'RESULT=$?; rm -rf "$CABAL_SOURCE_ROOT"; exit $RESULT' INT TERM HUP QUIT ERR EXIT
+CABAL_SOURCE_ROOT="$(mktemp -d -t cabal-git)"
+cd "$CABAL_SOURCE_ROOT"
+git clone "$URL"
+cd *
+cabal "$@"
+cd ../..

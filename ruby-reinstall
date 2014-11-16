@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+set -x
+
+# assumes brew OpenSSL is already installed!
+
+CHRUBY_ROOT=/usr/local/ruby
+
+RUBIES='
+1.9.3-p550
+2.0.0-p594
+2.1.5
+'
+#RUBINIUS='2.2.6'
+
+# options passed to ruby-install
+
+OPTIONS=''
+
+# patches are broken
+
+#OPTIONS_19='-p https://gist.githubusercontent.com/steakknife/10092587/raw/fix_ruby_openssl_no_engine.1.9.x_and_2.0.x.diff'
+#OPTIONS_19+=' -p https://gist.githubusercontent.com/steakknife/10096008/raw/change_ssl_defaults.1.9.diff'
+
+#OPTIONS_20='-p https://gist.githubusercontent.com/steakknife/10092587/raw/fix_ruby_openssl_no_engine.1.9.x_and_2.0.x.diff'
+#OPTIONS_20+=' -p https://gist.githubusercontent.com/steakknife/10096008/raw/change_ssl_defaults.2.diff'
+
+#OPTIONS_21='-p https://gist.githubusercontent.com/steakknife/10092587/raw/fix_ruby_openssl_no_engine.2.1.x.diff'
+#OPTIONS_21+=' -p https://gist.githubusercontent.com/steakknife/10096008/raw/change_ssl_defaults.2.diff'
+
+
+# configure options per ruby
+
+RUBY_CONFIGURE_ARGS='--enable-shared --disable-install-doc --with-openssl-dir=/usr/local/opt/openssl'
+
+if [ ! -d /usr/local/opt/openssl ]; then
+  echo "Error: brew'ed modern OpenSSL NOT detected!" >&2
+  echo >&2
+  echo "   Run   brew install openssl   or equivalent, then try again." >&2 
+  echo >&2
+  exit 1
+fi
+RUBY_19_CONFIGURE_ARGS=''
+RUBY_20_CONFIGURE_ARGS=''
+RUBY_21_CONFIGURE_ARGS=''
+
+for RUBY in $RUBIES; do
+  RUBY_TARGET_DIR="$CHRUBY_ROOT/ruby-$RUBY"
+  rm -rf "$RUBY_TARGET_DIR"
+  case "$RUBY" in
+  *1.9*)
+    ruby-install ruby $RUBY $OPTIONS $OPTIONS_19 -r "$CHRUBY_ROOT" -- $RUBY_CONFIGURE_ARGS $RUBY_19_CONFIGURE_ARGS
+    ;;
+  *2.0*)
+    ruby-install ruby $RUBY $OPTIONS $OPTIONS_20 -r "$CHRUBY_ROOT" -- $RUBY_CONFIGURE_ARGS $RUBY_20_CONFIGURE_ARGS
+    ;;
+  *2.1*)
+    ruby-install ruby $RUBY $OPTIONS $OPTIONS_21 -r "$CHRUBY_ROOT" -- $RUBY_CONFIGURE_ARGS $RUBY_21_CONFIGURE_ARGS
+    ;;
+  esac
+done
+
+if [ -n "$RUBINIUS" ]; then
+  ruby-install rbx $RUBINIUS -i "$CHRUBY_ROOT/rubinius-$RUBINIUS"
+fi

@@ -1,0 +1,4 @@
+#!/usr/bin/osascript
+tell application "Finder"
+    make new alias at POSIX file "$1" to POSIX file "$2"
+end tell

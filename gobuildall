@@ -1,0 +1,51 @@
+#!/bin/sh -ex
+
+# $1 = platform
+# $2 = arch
+find_output() {
+  find . -type f -perm '755' -depth 1 | while read -r FILE; do
+    PRESENT=""
+    case "$1" in
+    windows)
+      case "$2" in
+      386) PRESENT='PE32 executable' ;;
+      amd64) PRESENT='PE32+ executable' ;;
+      esac
+      ;;
+    darwin)
+      case "$2" in
+      386) PRESENT='Mach-O executable i386' ;;
+      arm) PRESENT='Mach-O executable arm' ;;
+      amd64) PRESENT='Mach-O 64-bit executable x86_64' ;;
+      esac
+      ;;
+    linux)
+      case "$2" in
+      386) PRESENT='ELF 32-bit LSB executable, Intel 80386' ;;
+      arm) PRESENT='ELF 32-bit LSB executable, ARM' ;;
+      amd64) PRESENT="ELF 64-bit LSB executable, x86-64" ;;
+      esac
+      ;;
+    esac
+    if [ -n "$PRESENT" ]; then
+      if file "$FILE" | grep -q "$PRESENT"; then
+        echo "$FILE"
+      fi
+    fi
+  done
+}
+
+ls /usr/local/Cellar/go/HEAD/libexec/pkg/tool/ | tr '_' ' ' | while read -r LINE; do
+  echo "Building for $LINE"
+  export GOOS="$(echo $LINE | sed 's/ .*//')"
+  export GOARCH="$(echo $LINE | sed 's/[^ ]* //')";
+  go build "$@"
+  if [ "$GOOS" = 'windows' ]; then
+    OUTPUT_EXT='.exe'
+  else
+    OUTPUT_EXT=''
+  fi
+  OUTPUT="$(find_output $GOOS $GOARCH | head -1)"
+  OUTPUT_BASE="$(echo $OUTPUT | sed \"s/$OUTPUT_EXT//\")"
+  mv "$OUTPUT" "$OUTPUT_BASE.$GOOS-$GOARCH.$OUTPUT_EXT"
+done 

@@ -1,0 +1,15 @@
+#!/usr/bin/env ruby
+require 'rubygems'
+
+ENV['MANPATH'] = ([ENV['MANPATH']]+
+  Gem.path.map { |path|
+    Dir[File.join(path, 'gems', '*')]
+  }.flatten.reverse.map { |gem_path|
+    man_path = File.join(gem_path, 'man')
+    if File.directory?(man_path) && !Dir[File.join(man_path, 'man[0-9]?[a-zA-Z]?')].empty?
+      man_path
+    end
+  }.reject(&:nil?)
+).join(':')
+
+system("man #{ARGV.join}") || system("gem man #{ARGV.join}") || exit(1)

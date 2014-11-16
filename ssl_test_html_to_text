@@ -1,0 +1,24 @@
+#!/bin/sh
+set -e
+# convert from stdin https://cc.dcsec.uni-hannover.de/ to parsable text
+
+trap 'RESULT=$?; rm -f "$NORMAL_CIPHER_SUITES_FILE" "$SPECIAL_CIPHER_SUITES_FILE" "$TMP_STDIN"; exit $RESULT' INT TERM QUIT ERR
+TMP_STDIN="$(mktemp -t XXXXX)"
+cat > "$TMP_STDIN"
+NORMAL_CIPHER_SUITES_FILE="$(mktemp -t XXXXX)"
+SPECIAL_CIPHER_SUITES_FILE="$(mktemp -t XXXXX)"
+
+normal_cipher_suites() {
+  grep -o '<div class=['\''"]row['\''"]><div class=['\''"]span1['\''"]>[^<]*</div><div class=['\''"]span4['\''"]>[^<]*</div><div class=['\''"]span1['\''"]>[^<]*</div><div class=['\''"]span6['\''"]>[^<]*<a[^>]*>[^<]*</a>[^<]*<a[^>]*>[^<]*</a>[^<]*<a[^>]*>[^<]*' \
+  | sed 's%<div class=['\''"]row['\''"]><div class=['\''"]span1['\''"]>(\([0-9a-f]*\),\([0-9a-f]*\))</div><div class=['\''"]span4['\''"]>\([A-Z0-9-]*\)</div><div class=['\''"]span1['\''"]>\([^<]*\)</div><div class=['\''"]span6['\''"]>[^<]*<[^>]*>\([^<]*\)</[^>]*>[^<]*<[^>]*>\([^<]*\)</[^>]*>[^<]*<[^>]*>%\1 \2|\3|\4|\5|\6|%g' 
+}
+
+special_cipher_suites() {
+  if grep -q '(00,ff)'; then
+    echo '00 ff|EMPTY-RENEGOTIATION-INFO-SCSV'
+  fi
+}
+
+special_cipher_suites < "$TMP_STDIN" > "$SPECIAL_CIPHER_SUITES_FILE"
+normal_cipher_suites < "$TMP_STDIN" > "$NORMAL_CIPHER_SUITES_FILE"
+cat "$SPECIAL_CIPHER_SUITES_FILE" "$NORMAL_CIPHER_SUITES_FILE" | awk '{printf "%02d|%s\n", NR, $0}'

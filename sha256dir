@@ -1,0 +1,2 @@
+#!/bin/sh
+exec dir "$@" | shasum -a256 | cut -d' ' -f1

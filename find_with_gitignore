@@ -1,0 +1,5 @@
+#!/bin/sh
+exec cat .gitignore - <<'GIT' | sed 's/^\/.*/\\.&\/.*/g;s/#.*//g;/^[[:space:]]*$/d;s/.*/! -regex "&" /g' | xargs find . -type f
+./.gitignore
+/.git
+GIT

@@ -1,0 +1,10 @@
+#!/bin/sh
+echo "TCP ports:"
+echo
+sudo lsof -iTCP -sTCP:LISTEN -P -n
+echo
+
+echo "UDP ports:"
+echo
+sudo lsof -iUDP -P -n
+echo

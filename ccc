@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -e
+set -m
+set -x
+trap 'RESULT=$?; exit $RESULT' INT QUIT TERM HUP PIPE ERR EXIT
+sleep 999999

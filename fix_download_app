@@ -1,0 +1,19 @@
+#!/bin/sh -e
+
+app="$@"
+paths='/Applications /Volumes/Applications/Applications'
+
+for path in $paths; do
+  app_path="$path/$app.app/"
+
+  if [ -d "$app_path" ]; then
+    receipt="$app_path/Contents/_MASReceipt/receipt"
+    if [ -f "$receipt" ]; then
+      sudo rm -f "$receipt"
+      exit 0
+    fi
+  fi
+done
+
+echo Receipt not found >&2
+exit 1

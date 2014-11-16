@@ -1,0 +1,76 @@
+#!/bin/sh -e
+
+#cTransmission
+#u501
+#tIPv4
+#PTCP
+#n*:54052
+#tIPv6
+#PTCP
+#n*:54052
+#p9764
+#cnc
+#u0
+#tIPv4
+#PTCP
+#n*:17778
+#p9912
+#cnc
+#u0
+#tIPv4
+#PTCP
+#n*:17777
+#p10535
+#cdnsmasq
+#u-2
+#tIPv4
+#PTCP
+#n127.0.0.1:53
+#tIPv6
+#PTCP
+#n[fe80:1::1]:53
+#tIPv6
+#PTCP
+#n[::1]:53
+#p11299
+#cdnscrypt-proxy
+#u-2
+#tIPv4
+#PTCP
+#n127.0.0.1:54
+reset() {
+  DONE=''
+#  PROCESS_NAME=''
+  PROTOCOL=''
+#  PROCESS_ID=''
+  FILE_TYPE=''
+  PROCESS_USER_ID=''
+  FILE_NAME=''
+}
+
+path_to_pid() {
+
+}
+
+process() {
+  USER_NAME="$(id -un $PROCESS_USER_ID 2>/dev/null)"
+  USER_NAME="${USER_NAME-$PROCESS_USER_ID}"
+  PATH_TO_PROGRAM="$(path_to_pid $PROCESS_ID)"
+  printf "%-20s %-6s %-10s %-4s %-5s %-40s\n" "$PROCESS_NAME" "$PROCESS_ID" "$USER_NAME" "$FILE_TYPE" "$PROTOCOL" "$FILE_NAME"
+  reset
+}
+
+reset
+
+while read -r LINE; do
+  FIELD="$(echo $LINE | cut -c1)"
+  VALUE="$(echo $LINE | cut -c2-)"
+  case "$FIELD" in
+    c) PROCESS_NAME="$VALUE" ;;
+    P) PROTOCOL="$VALUE" ;;
+    p) PROCESS_ID="$VALUE" ;;
+    t) FILE_TYPE="$VALUE" ;;
+    u) PROCESS_USER_ID="$VALUE" ;;
+    n) FILE_NAME="$VALUE" ; process ;;
+  esac
+done

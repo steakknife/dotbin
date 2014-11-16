@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+set -e
+#set -x
+
+refinery_github_user="${1:-refinery}"
+refinery_major_version="${3:-2}"
+refinery_minor_version="${4:-0}"
+refinery_branch="${2:-${refinery_major_version}-${refinery_minor_version}-stable}"
+refinery_engines="${5:-authentication core dashboard images pages resources testing}"
+refinery_other_engines="${6:-i18n acts-as-indexed blog settings search news adexin-team/videojs calendar portfolio page-images unixcharles/copywriting wirelab/mailchimp@refinery-${refinery_major_version}.${refinery_minor_version}}"
+
+tmpdir="$HOME/.refinerycms-${refinery_github_user}"
+
+if [ -d "$tmpdir" ]; then
+  cd "$tmpdir"
+  git pull
+else
+  git clone https://github.com/$refinery_github_user/refinerycms.git "$tmpdir"
+  cd "$tmpdir"
+fi
+
+rm -rf vendor/bundle
+git checkout "$refinery_branch"
+
+trap 'rm -rf "$tmpdir/release"' EXIT ERR QUIT INT TERM
+mkdir release
+
+gem build "refinerycms.gemspec"
+mv "refinery"*.gem release
+
+for refinery_engine in $refinery_engines; do
+  cd "$refinery_engine"
+  gem build "refinerycms-$refinery_engine.gemspec"
+  mv "refinerycms-${refinery_engine}"*.gem ../release
+  cd ..
+done
+
+mkdir -p other_engines
+cd other_engines
+for refinery_other_engine in $refinery_other_engines; do
+  if echo $refinery_other_engine | grep -qs '/'; then
+    tmp_github_user="${refinery_other_engine%/*}"
+    refinery_other_engine="${refinery_other_engine#*/}"
+  else
+    tmp_github_user="$refinery_github_user" 
+  fi
+  if echo $refinery_other_engine | grep -qs '@'; then
+    tmp_branch="${refinery_other_engine#*@}"
+    refinery_other_engine="${refinery_other_engine%@*}"
+  else
+    tmp_branch="$refinery_branch"
+  fi
+  echo "engine $refinery_other_engine user $tmp_github_user branch $tmp_branch"
+  if [ -d refinerycms-$refinery_other_engine ]; then
+    cd refinerycms-$refinery_other_engine
+    if git remote -v | grep -qs "$tmp_github_user/"; then
+      git pull
+    else
+      cd ..
+      rm -rf refinerycms-$refinery_other_engine
+      git clone https://github.com/$tmp_github_user/refinerycms-$refinery_other_engine.git
+      cd refinerycms-$refinery_other_engine
+    fi
+  else
+    git clone https://github.com/$tmp_github_user/refinerycms-$refinery_other_engine.git
+    cd refinerycms-$refinery_other_engine
+  fi
+  git checkout "$tmp_branch" || true
+  gem build "refinerycms-$refinery_other_engine".gemspec
+  mv "refinerycms-$refinery_other_engine"*.gem ../../release
+  cd ..
+done
+cd ..
+cd release
+fury push *.gem
+cd ..

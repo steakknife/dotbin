@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+set -e
+
+# brew install lame ffmpeg
+
+source ~/.itunes_music_library
+
+if [ x"$1" = x'-n' ]; then
+  DRY_RUN=1
+fi
+
+if [ ! -d "$FROM" ]; then
+  echo "FROM='$FROM' does not exist.  create or mount it first" >&2
+fi
+
+if [ ! -d "$TO" ]; then
+  echo "TO='$TO' does not exist.  create or mount it first" >&2
+fi
+
+# mp3_convert src dst
+mp3_convert() {
+  if [ -n "$DRY_RUN" ]; then
+    echo lame --verbose --preset cd \"$1\" \"$2\"
+  else
+    lame --verbose --preset cd "$1" "$2"
+  fi
+}
+
+# flac_convert src dst
+flac_convert() {
+  if [ -n "$DRY_RUN" ]; then
+    echo ffmpeg -i \"$1\" -acodec mp3 \"$2\"
+  else
+   ffmpeg -i "$1" -acodec mp3 "$2"
+  fi
+}
+
+log() { 
+  if [ -n "$DRY_RUN" ]; then
+    echo Would create \"$TO/iphone_mp3_make_library.log.txt\" >&2
+    cat
+  else 
+    tee "$TO/iphone_mp3_make_library.log.txt"
+  fi
+}
+
+mkdir_from_filename() {
+  if [ -n "$DRY_RUN" ]; then
+    echo mkdir -p \"$(dirname "$1")\"
+  else
+    mkdir -p "$(dirname "$1")"
+  fi
+}
+
+sed_escape() {
+  echo "$1" | sed 's/\\/\\\\/g;s/%/\\%/g'
+}
+
+time {
+
+echo "Started audio library conversion at `date`" >&2
+
+if [ -z "$SKIP_MP3" ]; then
+  find "$FROM" -type f -iname '*.mp3' | while read -r SOURCE_MP3_FILENAME; do
+    DEST_MP3_FILENAME="$(echo "$SOURCE_MP3_FILENAME" | sed "s%$(sed_escape "$FROM")%$TO%")"
+    mkdir_from_filename "$DEST_MP3_FILENAME"
+    mp3_convert "$SOURCE_MP3_FILENAME" "$DEST_MP3_FILENAME"
+  done
+fi
+
+if [ -z "$SKIP_FLAC" ]; then
+  find "$FROM" -type f -iname '*.flac' | while read -r SOURCE_FLAC_FILENAME; do
+    DEST_FLAC_MP3_FILENAME="$(echo "$SOURCE_FLAC_FILENAME" | sed "s%$(sed_escape "$FROM")%$TO%;s/\\.[Ff][Ll][Aa][Cc]$/.mp3/")"
+#    mkdir_from_filename "$DEST_FLAC_MP3_FILENAME"
+    flac_convert "$SOURCE_FLAC_FILENAME" "$DEST_FLAC_MP3_FILENAME"
+  done
+fi
+
+
+echo "Finished audio library conversion at `date`" >&2
+
+} >/dev/null 2>&1 #| log
+
+if [ -n "$DRY_RUN" ]; then
+  echo Would create \"$TO/iphone_mp3_make_library.log.txt\" >&2
+else
+  echo "
+
+  This is a converted library '$FROM' (mp3, flac) -> mp3's for iPhone
+
+  " > "$TO/README.markdown"
+fi

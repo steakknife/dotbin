@@ -1,0 +1,8 @@
+#!/bin/sh -e
+if [ -z "$1" ] || [ ! -e "/Library/LaunchDaemons/homebrew.mxcl.dnscrypt-proxy.plist.$1" ]; then
+  echo "Missing valid param" >&2
+  exit 1
+fi
+sudo ln -sf /Library/LaunchDaemons/homebrew.mxcl.dnscrypt-proxy.plist.$1  /Library/LaunchDaemons/homebrew.mxcl.dnscrypt-proxy.plist 
+sudo launchctl unload -w /Library/LaunchDaemons/homebrew.mxcl.dnscrypt-proxy.plist || true
+sudo launchctl load -w /Library/LaunchDaemons/homebrew.mxcl.dnscrypt-proxy.plist

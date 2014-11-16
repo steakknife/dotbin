@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+if [ -n "$1" ]; then
+  OSX="$1"
+  shift
+else
+  OSX='10.10'
+fi
+if [[ "$OSX" =~ 10\.10 ]]; then
+  NEW=1
+  echo "New-style kernel"
+else
+  echo "Old-style kernel"
+fi
+
+KDK="$(find /Library/Developer/KDKs -depth 1 -type d -name "*${OSX}_*")"
+
+case "$1" in
+DEBUG|debug|development)
+  KERNEL="$1"
+  shift
+  ;;
+RELEASE|release)
+  KERNEL=''
+  shift
+  ;;
+*)
+  if [ -n "$NEW" ]; then
+    KERNEL='development'
+  else
+    KERNEL=''
+  fi
+esac
+
+
+if [ -n "$NEW" ]; then
+  if [ -n "$KERNEL" ]; then
+    KERNEL_PATH="$KDK/System/Library/Kernels/kernel.$KERNEL"
+  else
+    KERNEL_PATH="$KDK/System/Library/Kernels/kernel"
+  fi
+else # <= 10.9.x
+  if [ -n "$KERNEL" ]; then
+    KERNEL_PATH="$KDK/${KERNEL}_Kernel/mach_kernel"
+  else
+    KERNEL_PATH="$KDK/mach_kernel"
+  fi
+fi
+
+if [ ! -f "$KERNEL_PATH" ]; then
+  echo "Missing KDK kernel '$KERNEL_PATH'" >&2
+  exit 1
+fi
+
+exec lldb "$KERNEL_PATH" "$@"

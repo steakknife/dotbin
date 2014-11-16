@@ -1,0 +1,138 @@
+#!/bin/bash
+
+is_running() {
+  ps -ceocommand | grep "${1}" | grep -v 'grep' >/dev/null
+}
+
+usage() {
+  echo "Usage: $(basename ${0}) src dest"
+  echo
+  echo "   Moves all Mac OS X apps from src to dest"
+  echo
+  exit 1
+}
+
+get_mtime() {
+  stat -f%m "${1}"
+}
+
+get_size() {
+  du -ks "${1}" | cut -f1
+}
+
+if ! uname | grep -qs Darwin 
+then
+  echo "Must be run on Mac OSX"
+  exit 1
+fi
+
+if [ "${#}" -ne 2 ]
+then
+  echo "Missing src or dest directory"
+  echo
+  usage
+fi
+
+if [ ! -d "${1}" ] 
+then
+  echo "Error ${1} does not exist"
+  usage
+fi
+
+if [ ! -d "${2}" ] 
+then
+  echo "Error ${2} does not exist"
+  echo
+  usage
+fi
+
+
+ src="${1}" ; shift
+dest="${1}" ; shift
+
+while read -r app_name
+do
+  src_app="${src}/${app_name}.app"
+  dest_app="${dest}/${app_name}.app"
+
+  if [ ! -d "${src_app}" ]
+  then
+    echo "Skipping missing ${app_name}"
+    continue
+  fi
+
+  if [ -d "${dest_app}" ]
+  then
+    echo -n "App already existing ${app_name} in destination. "
+
+    src_mtime=`get_mtime "${src_app}"`
+    dest_mtime=`get_mtime "${dest_app}"`
+    if [[ "${src_mtime}" -gt x"${dest_mtime}" ]]
+    then
+      echo -n " destination is newer."
+    elif [[ "${src_mtime}" -lt x"${dest_mtime}" ]]
+    then
+      echo -n " source is newer."
+    fi
+
+    if diff -q "${src_app}" "${dest_app}" >/dev/null
+    then
+      echo " app contents are identical.  deleting source; saving destination."
+      sudo \rm -rf "${src_app}"
+    else
+      echo " app contents differ.  Skipping"
+    fi
+
+    continue
+  fi
+
+  if is_running "${app_name}"
+  then
+    echo "Skipping running ${app_name}.  Close it completely and rerun. option + command + esc."  
+    continue
+  fi
+
+  src_app_size=`get_size "${src_app}"` # in KiB
+  free=`df -k $(dirname "${dest_app}") 2>&1 | tail -1` # in KiB
+  dest_free=`echo ${free} | cut -d' ' -f4`
+  dest_dev=`echo ${free} | cut -d' ' -f1`
+
+  if [[ ${dest_free} -lt ${src_app_size} ]]
+  then
+    app_mb=$(( (${src_app_size} + 1023) / 1024 )) # in MiB
+    free_mb=$(( (${dest_free} + 1023) / 1024 )) # in MiB
+    echo "Insufficient free space to move ${app_name}, skipping.  App: ${app_mb} MiB, free: ${free_mb} MiB on ${dest_dev}"
+    continue
+  fi
+
+  echo "Moving '${src_app}' -> '${dest_app}'"
+  sudo \mv "${src_app}" "${dest_app}"
+
+done <<'apps'
+Address Book
+App Store
+Automator
+Calculator
+Chess
+Dashboard
+Dictionary
+DVD Player
+FaceTime
+Font Book
+iCal
+iChat
+iDVD
+iMovie
+iPhoto
+iTunes
+Launchpad
+Mission Control
+Photo Booth
+Preview
+QuickTime Player
+Safari
+Stickies
+System Preferences
+TextEdit
+Time Machine
+apps

@@ -1,0 +1,41 @@
+#!/usr/bin/env
+
+check_ruby() {
+  ruby -c | grep -qs 'Syntax OK'
+}
+
+check_erb() {
+  erb -xT- | check_ruby
+}
+
+check_html() {
+  :
+}
+
+check_css() {
+  :
+}
+
+check_js() {
+  : # jslint
+}
+
+check_yaml() {
+  ruby -ryaml -e 'YAML.load(STDIN).read)'
+}
+
+check_json() {
+  ruby -rjson -e 'JSON.parse(STDIN.read)'
+}
+
+check_sass() {
+  sass --check
+}
+
+check_scss() {
+  sass --scss --check
+}
+
+check_mustache() {
+  mustache --compile "${1}" | check_ruby 
+}

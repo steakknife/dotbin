@@ -1,0 +1,151 @@
+#!/bin/sh -ex
+
+COMMAND="`which gist`"
+
+type() {
+  PARSED_ARGUMENTS="$PARSED_ARGUMENTS -t $1" 
+}
+
+description() {
+  PARSED_ARGUMENTS="$PARSED_ARGUMENTS -d '$1'"
+}
+
+private() {
+  PARSED_ARGUMENTS="$PARSED_ARGUMENTS -p" 
+}
+
+open() {
+  PARSED_ARGUMENTS="$PARSED_ARGUMENTS -o" 
+}
+
+arg() {
+  echo "dog: $2" >&2 
+  echo >&2
+  $COMMAND -$1 >&2
+  echo >&2
+  exit ${3:-0}
+}
+
+help() {
+  arg h
+}
+
+version() {
+  arg v
+}
+
+man() {
+  arg m
+}
+
+error() {
+  arg h 'Invalid argument' 1
+}
+
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -)  PARSED_ARGUMENTS="$PARSED_ARGUMENTS -" ;;
+    --) break ;;
+    --*) 
+      OPTION="`echo $1 | sed 's/^--//'`"
+      case "$OPTION" in
+        no-open) ;; # ignore it
+        no-private) ;; # ignore it
+        private) private ;;
+    description) shift ; description "$1" ;;
+           type) type $2 ; [ -n "$2" ] && shift ;;
+           open) open ;;
+           help) help ;;
+        version) version ;;
+            man) man ;;
+              *) error ;;
+      esac
+      ;;
+    -no-open) ;; # ignore it
+    -no-private) ;; # ignore it
+    -description) shift ; description "$1" ;;
+    -type) type ;;
+    -open) open ;;
+    -help) help ;;
+    -version) version ;;
+    -man) man ;;
+    -*) # stacked options   
+      OPTS="`echo $1 | sed 's/^-//'`"
+      while [ -n "$OPTS" ]; do
+        OPTION="`echo $OPTS | sed 's/^\\(-\\).*/\1/'`"
+        case "$OPTION" in
+          d) shift ; description "$1" ;;
+          t) type $2 ; [ -n "$2" ] && shift ;;
+          o) open ;;
+          h) help ;;
+          p) private ;;
+          v) version ;;
+          m) man ;;
+          *) error ;;
+        esac
+        OPTS="`echo $OPTS | sed 's/^.//'`"
+      done
+      ;;
+    *) FILE_ARGUMENTS="$FILE_ARGUMENTS '$1'"
+  esac
+  shift
+done
+
+# grab everything after -- as file arguments
+while [ $# -gt 0 ]; do
+  FILE_ARGUMENTS="$FILE_ARGUMENTS '$1'"
+  shift
+done
+
+if [ -x "`which privacy_filter`" ] && [ -n "$FILE_ARGUMENTS" ]; then
+  # Filter the files before uploading
+
+  # Create a temp workspace
+  trap 'rm -rf $T_DIR >/dev/null 2>&1' EXIT ERR INT QUIT
+  T_DIR="`mktemp -d -t ''`"
+  if [ -z "$T_DIR" ] || [ ! -d "$T_DIR" ]; then
+    arg 'Error creating tempdir' 1
+  fi
+
+  # Filter each file
+  TMP_FILES=""
+  for FILE in $FILE_ARGUMENTS ; do
+    # Remove the '' so it's not passed as a part of the filename.
+    FILE="`eval echo $FILE`"
+    FILE_BASE="`basename $FILE`"
+    NEW_FILE="$T_DIR/$FILE_BASE"
+    echo "Filtering $FILE_BASE" >&2
+    cat $FILE | privacy_filter > "$NEW_FILE"
+    TMP_FILES="$TMP_FILES '$NEW_FILE'"
+  done
+
+  # Do it 
+  FILE_NAMES=`for FILE in $TMP_FILES ; do
+    FILE="\`eval echo \$FILE\`"
+    FILE_BASE="\`basename \$FILE\`"
+    echo "Uploading \$FILE_BASE" >&2
+    echo \$FILE
+  done`
+
+  echo command=$COMMAND
+  echo args=$PARSED_ARGUMENTS
+  echo files=$FILE_NAMES
+
+  COMMAND="$COMMAND $PARSED_ARGUMENTS -- $FILE_NAMES"
+  echo newcommand=$COMMAND
+  eval "$COMMAND"
+
+  # Cleanup is automagic at exit
+else # input is coming from stdin
+  if [ -x "`which privacy_filter`" ]; then
+    privacy_filter | $COMMAND $PARSED_ARGUMENTS
+  else
+    $COMMAND $PARSED_ARGUMENTS
+  fi
+fi
+
+# Shorten the url if gio is available
+if [ -x "`which gio`" ] && [ -x "`which pbpaste`" ]; then
+  gio `pbpaste` | pbcopy
+fi

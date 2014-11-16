@@ -1,0 +1,3 @@
+#!/bin/sh
+set -e
+ls -S ~/Library/Caches/Google/Chrome/Default/Cache/f_* | head

@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+#set -x
+set -e
+
+COUNTRY="US"
+STATE="New York"
+CITY="New York"
+ORG="ACME"
+ORG_UNIT="$ORG Development"
+EMAIL="certificates@acme.org"
+TITLE="Code Signing"
+CN="$ORG $TITLE"
+
+SUBJ="/C=$COUNTRY/ST=$STATE/L=$CITY/O=$ORG/OU=$ORG_UNIT/CN=$CN/emailAddress=$EMAIL"
+
+PRIVATE_KEY_FILE="$$.privkey.pem"
+PUBLIC_KEY_FILE="$$.pubkey.pem"
+CERTIFICATE_FILE="$$.cert.perm"
+
+KEYCHAIN="$HOME/Library/Keychains/login.keychain"
+
+/usr/local/opt/openssl/bin/openssl req \
+  -subj "$SUBJ" \
+  -new \
+  -x509 \
+  -sha256 \
+  -extensions kernel \
+  -nodes \
+  -newkey rsa:2048 \
+  -keyout "$PRIVATE_KEY_FILE" \
+  -out "$CERTIFICATE_FILE" \
+  -days 1095
+
+security -v import "$CERTIFICATE_FILE" -k "$KEYCHAIN"
+security -v import "$PRIVATE_KEY_FILE" -k "$KEYCHAIN"
+
+openssl rsa -in "$PRIVATE_KEY_FILE" -pubout > "$PUBLIC_KEY_FILE"
+security -v import "$PUBLIC_KEY_FILE" -k "$KEYCHAIN"
+srm "$PRIVATE_KEY_FILE" "$PUBLIC_KEY_FILE" "$CERTIFICATE_FILE"
+
+open -a 'Keychain Access'
+
+echo
+echo "In Keychain Access:"
+echo
+echo "  1) Rename 'Imported Private Key' to '$CN'"
+echo "  2) Rename 'Imported Public Key'  to '$CN'"
+echo "  3) Certificate '$CN', change Trust > When using this certificate to 'Always Trust'"
+echo
+echo

@@ -1,0 +1,9 @@
+#!/bin/sh
+curl --include \
+    --no-buffer \
+    -H "Connection: Upgrade" \
+    -H "Upgrade: websocket" \
+    -H "Host: 127.0.0.1" \
+    -H "Origin: http://127.0.0.1$1" \
+    "http://127.0.0.1$1" \
+    "$2" "$3" "$4" "$5"

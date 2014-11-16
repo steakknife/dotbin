@@ -1,0 +1,28 @@
+#!/bin/sh -e
+
+die() {
+  echo "$@" >&2
+  exit 1
+}
+
+if [ -z "$1" ]; then
+  die 'usage: sshcpkeys [user@]host [ssh options]'
+fi
+
+KEYS_FILE="$(mktemp -t sshcpkeys XXXXX)"
+
+trap 'RESULT=$?; rm -rf $KEYS_FILE; exit $RESULT' INT TERM ERR QUIT EXIT
+
+if ! ssh-add -L > "$KEYS_FILE"; then
+  die 'The agent has no identities.' 
+fi
+
+ssh "$@" '
+mkdir -m 0700 -p ~/.ssh
+if [ -e ~/.ssh/authorized_keys ]; then
+  sort -u ~/.ssh/authorized_keys - > ~/.ssh/authorized_keys.tmp.$$
+  mv ~/.ssh/authorized_keys.tmp.$$ ~/.ssh/authorized_keys
+else
+  cat > ~/.ssh/authorized_keys
+fi
+ ' < "$KEYS_FILE"

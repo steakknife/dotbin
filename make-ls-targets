@@ -1,0 +1,2 @@
+#!/bin/sh
+awk -F: '/[^\t].*:/&&!/=/{print$1}' Makefile | sort -u

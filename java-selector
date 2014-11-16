@@ -1,0 +1,14 @@
+#!/bin/sh
+if [ "$(basename "$0")" = 'java-selector' ]; then
+  find /Library/Java/JavaVirtualMachines -type d -name 'bin' | grep 'Home/bin' | while read -r JDK_HOME; do
+    VERSION="$(echo "$JDK_HOME" | grep -o '[^/]*jdk[^/]*' | grep -o '1\.[[:digit:]]' | sed 's/1\.//')"
+    find "$JDK_HOME" -type f | while read -r FILE; do
+      echo "Linking JDK$VERSION -> $FILE"
+      ln -s "$0" "$(dirname "$0")/$(basename "$FILE")$VERSION"
+    done
+  done
+else
+  CMD="$(basename "$0" | sed 's/[[:digit:]]//g')"
+  VERSION="$(basename "$0" | grep -o '[[:digit:]][[:digit:]]*')"
+  exec /usr/libexec/java_home -v 1.$VERSION --exec $CMD  "$@"
+fi

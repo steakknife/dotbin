@@ -1,0 +1,12 @@
+#!/bin/sh
+# unhide file by removing a dot in front
+# usage: unhide FILE [FILE]...
+set -e
+
+for f in "$@"; do
+    b=$(basename "$f")
+    while [ "${b:0:1}" == '.' ]; do
+        b="${b:1}" 
+    done
+    \mv -v "$f" $(dirname "$f")/"$b"
+done

@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+set -e
+set -x
+
+BIN=iosccbin
+# xcode-select -p
+# /Applications/Xcode.app/Contents/Developer
+
+export CC="$(xcode-select -p)/usr/bin/gcc"
+export GCC="$CC"
+export CLANG="$CC"
+export CXX="$(xcode-select -p)/usr/bin/g++"
+export LD="$(xcode-select -p)/usr/bin/ld"
+#export LD="$(xcode-select -p)/Platforms/iPhoneOS.platform/Developer/usr/bin/ld"
+
+export IOSSDKVER="${IOSDKVER-7.0}"
+export IOSSDK="${IOSSDK-$(xcode-select -p)/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS${IOSSDKVER}.sdk}"
+export IOSMIN="${IOSMIN-6.0}"
+
+export ARCH="${ARCH:-armv7}"
+export CFLAGS+=" -arch $ARCH -miphoneos-version-min=$IOSMIN -isysroot "$IOSSDK" -gdwarf-2 -mthumb"
+export CXXFLAGS+=" -arch $ARCH -miphoneos-version-min=$IOSMIN -isysroot "$IOSSDK" -gdwarf-2 -mthumb"
+#export LDFLAGS+=" -dead_strip -arch $ARCH" # because configure is dumb
+#export LDFLAGS+=" -dead_strip -arch $ARCH -ios_version_min $IOSMIN" 
+
+export LDFLAGS+=" -L"$IOSSDK/usr/lib/" -L"$IOSSDK/usr/lib/system/" -lSystem"
+
+#export CFLAGS+=" -fmessage-length=0 -fdiagnostics-print-source-range-info -fdiagnostics-show-category=id -fdiagnostics-parseable-fixits -std=gnu99 -Wno-trigraphs -fpascal-strings -Wmissing-prototypes -Wreturn-type -Wparentheses -Wswitch -Wno-unused-parameter -Wunused-variable -Wunused-value -iquote -fpch-preprocess"
+#export CXXFLAGS+=" -fmessage-length=0 -fdiagnostics-print-source-range-info -fdiagnostics-show-category=id -fdiagnostics-parseable-fixits -std=gnu99 -Wno-trigraphs -fpascal-strings -Wmissing-prototypes -Wreturn-type -Wparentheses -Wswitch -Wno-unused-parameter -Wunused-variable -Wunused-value -iquote -fpch-preprocess"
+
+#if [ -n "$DEBUG" ]; then
+#  # debug
+#  export CFLAGS+=" -g -O0 -DDEBUG=1"
+#  export CXXFLAGS+=" -g -O0 -DDEBUG=1"
+#else
+#  # release
+#  export CFLAGS+=" -O1 -DNDEBUG=1"
+#  export CXXFLAGS+=" -O1 -DNDEBUG=1"
+#fi
+
+script_source() {
+  ENV="$1"
+  shift
+  cat << EOF
+#!/bin/bash
+export $ENV
+exec "$@" "\$@"
+EOF
+}
+
+script() {
+  FILE="$1"
+  shift
+  script_source "$*" > "$FILE"
+  chmod +x "$FILE"
+}
+
+if [ "$1" = '-M' ]; then
+  shift || true
+  rm -rf $BIN
+  mkdir $BIN
+
+  FLAGS="CFLAGS+=\" $CFLAGS\" CXXFLAGS+=\" $CXXFLAGS\" CPPFLAGS+=\" $CPPFLAGS\" LDFLAGS+=\" $LDFLAGS\""
+
+  script $BIN/cc      "$FLAGS" "$CC"   "$CFLAGS"
+  script $BIN/c++     "$FLAGS" "$CXX"  "$CXXFLAGS"
+  script $BIN/clang   "$FLAGS" "$CC"   "$CFLAGS"
+  script $BIN/clang++ "$FLAGS" "$CXX"  "$CXXFLAGS"
+  script $BIN/ld      "$FLAGS" "$LD"   "$LDFLAGS"
+
+fi
+export PATH="$PWD/$BIN:$PATH"
+
+exec "$@"

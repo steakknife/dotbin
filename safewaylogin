@@ -1,0 +1,15 @@
+#!/bin/sh
+set -ex
+CLIENT_IFACE=en1
+CLIENT_MAC=`ifconfig $CLIENT_IFACE ether | tail -1 | egrep -o '[0-9a-f]{2}(:[0-9a-f]{2})*' | tr '[a-f]:' '[A-F]-'`
+CLIENT_IP=`ifconfig $CLIENT_IFACE inet | tail -1 | egrep -o '[0-9]{1,3}(\.[0-9]{1,3})*' | head -1`
+curl --trace-ascii -v \
+    -X POST \
+    -d AP_MAC=E839356BB05E \
+    -d CLIENT_IP=$CLIENT_IP \
+    -d CLIENT_MAC=$CLIENT_MAC \
+    -d 'loginURL=https://portals.wanderingwifi.com:8090/goform/HtmlLoginRequest' \
+    -d P_H_=1 \
+    --connect-timeout 20 \
+    --max-time 60 \
+    http://safewaylogin.wanderingwifi.com/login

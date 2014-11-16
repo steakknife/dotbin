@@ -1,0 +1,245 @@
+#!/usr/bin/env bash
+set -e
+set -x
+
+SSSH_CONF_DIR="${SSSH_CONF_DIR-$HOME/.sssh}"
+SSSH_GROUPS_DIR="${SSSH_GROUPS_FILE-$SSSH_CONF_DIR/groups}"
+
+stderr() {
+  echo "$@" >&2
+}
+
+die() {
+  stderr "$@"
+  exit 1
+}
+
+Help() {
+  cat << 'HELP'
+
+# group commands
+sssh-group create groupname hostname*
+sssh-group list [regex] # list groups
+sssh-group rename oldgroupname newgroupname
+sssh-group delete regex+ # delete groups
+
+# host-within-group commands
+sssh-group hosts groupregex hostname* # list
+sssh-group hosts groupregex -foo      # delete foo
+sssh-group hosts groupregex +foo      # add foo
+
+# active group commands
+sssh-group active # show active group(s)
+sssh-group active ([-]group)*
+sssh-group active * # make all groups active
+sssh-group active -* # make all groups active
+
+HELP
+}
+
+
+# line matching functions
+
+match() {
+  egrep --colour=never "$@"
+}
+
+dont_match() {
+  match -v "$@"
+}
+
+silent_dont_match() {
+  dont_match -q "$@"
+}
+
+remove_match() {
+  dont_match "$@" || { [ $? = 1 ] && return 0 ;} # fail on file errors only
+}
+
+# no output on stdout
+silent_match() {
+  match -q "$@"
+}
+
+# stdin -> stdout
+# error if no output or closed
+has_binary_output() {
+  tee >(cat) | dd bs=1 count=1 2>&1 >/dev/null | silent_match '^1 b'
+}
+
+# how many forks?
+# forks ls
+# forks yourcommand args
+forks() {
+  { set -m
+    VAR=FORKS$$
+    eval "$VAR=0"
+    trap "echo FORK >&2; ((++$VAR))" CHLD
+    "$@"
+    trap - CHLD
+    stderr "$(eval echo \$$VAR) FORK(S)"
+  ;}
+}
+
+
+mk_dir() {
+  mkdir "$@"
+  touch "${2-$1}/.blank_file_for_source_control"
+}
+
+mk_dir_p() {
+  mk_dir -p "$@"
+}
+
+ensure_conf_dir() {
+  mk_dir_p "$SSSH_CONF_DIR"
+}
+
+ensure_groups_dir() {
+  mk_dir_p "$SSSH_GROUPS_DIR"
+}
+
+has_groups_file() {
+  test -e "$SSSH_GROUPS_FILE"
+}
+
+doesnt_have_groups_file() {
+  test ! -e "$SSSH_GROUPS_FILE"
+}
+
+valid_group_name() {
+  stderr "Validating group name '$1'"
+  echo "$1" | silent_match '^[^*/|]+$'
+}
+ensure_valid_group_name() {
+  valid_group_name "$1" || die 'Group cannot be empty, contain /, | or *'
+}
+
+has_group() {
+  ensure_valid_group_name "$1"
+  test -d "$SSSH_GROUPS_DIR/$1"
+}
+
+doesnt_have_group() {
+  ! has_group "$1"
+}
+
+ensure_valid_hostnames() {
+  for HOST in "$@"; do
+    if echo "$HOST" | silent_match '[^a-zA-Z0-9\._-]'; then
+      return 1
+    fi
+  done
+}
+
+
+# $1 groupname hostname*
+Create() {
+  GROUP="$1"; shift || unset $1
+  doesnt_have_group "$GROUP" || die 'Group already exists'
+  ensure_valid_hostnames "$@"
+  ensure_groups_dir
+  mk_dir_p  "$SSSH_GROUPS_DIR/$GROUP"
+  for HOST in "$@"; do
+    mk_dir_p "$SSSH_GROUPS_DIR/$GROUP/$HOST"
+  done
+}
+
+all_groups() {
+  if [ -d "$SSSH_GROUPS_DIR" ]; then
+    find "$SSSH_GROUPS_DIR" -type d -depth 1 -exec basename {} \;
+  fi
+}
+
+List() {
+  if [ -z "$1" ]; then
+    all_groups
+  else
+    ARGS=( "$@" )
+    for ((I=0;I<$#;++I)); do
+      ARGS[$I]="$(echo "${ARGS[$I]}" | sed 's/\*/.*/g')"
+    done
+    SAVE_IFS="$IFS"; IFS='|'
+    REGEX="${ARGS[*]}" 
+    IFS="$SAVE_IFS"
+    all_groups | match "^${REGEX}$"
+  fi
+}
+
+Delete() {
+  if [ -z "$1" ]; then
+    die 'No groups specified, delete all groups using *'
+  fi
+  { List "$@" | match '.' || die 'No groups to delete' ;} | while read -r GROUP; do
+    if rm -rf -- "$SSSH_GROUPS_DIR/$GROUP"; then
+      stderr "Deleted group $GROUP"
+    else
+      echo "Failed to delete group $GROUP"
+    fi
+  done | match 'Failed' >&2
+}
+
+Rename() {
+  if [ $# != 2 ]; then
+    die 'Group rename takes two parameters: oldname newname'
+  fi
+  if ! valid_group_name "$1"; then
+    die 'Original group name is invalid'
+  fi
+  if ! valid_group_name "$2"; then
+    die 'New group name is invalid'
+  fi
+  if doesnt_have_group "$1"; then
+    die 'Original group does not exist'
+  fi
+  if has_group "$2"; then
+    die 'Target group already exists'
+  fi
+  mv "$SSSH_GROUPS_DIR/$1" "$SSSH_GROUPS_DIR/$2"
+}
+
+list_hosts_in_group() {
+  GROUP="$1"
+  if ! has_group "$GROUP"; then
+    die "Group $1 does not exist"
+  fi
+  { { find "$SSSH_GROUPS_DIR/$GROUP" -type d -depth 1 -exec basename {} \; ;} ; echo / ;} | match_or_empty '^([a-zA-Z0-9\._-]+|/)$' | remove_match '/'
+}
+
+add_hosts_to_group() {
+  GROUP="$1"
+  shift || die "Missing hostname to add to group $GROUP"
+  if ! has_group "$GROUP"; then
+    die "Group $1 does not exist"
+  fi
+  ensure_valid_hostnames "$@"
+  for HOST in "$@"; do
+    DIR="$SSSH_GROUPS_DIR/$GROUP/$HOST"
+    if [ -d "$DIR" ]; then
+      stderr "Group $GROUP already contains hostname $HOST"
+    else
+      mk_dir "$DIR"
+    fi
+  done
+}
+
+Hosts() {
+  if [ -z "$2" ]; then
+    list_hosts_in_group "$1"
+  else
+    :;
+  fi
+}
+
+valid_commands() {
+  match '^[A-Z][a-z]*(' < "$0" | sed 's/(.*//'
+}
+
+valid_command() {
+  valid_commands | silent_match "^$1$"
+}
+
+CMD="$1"; shift || help
+CMD="$(echo "${CMD::1}" | tr '[a-z]' '[A-Z]')${CMD:1}"
+valid_command "$CMD" || Help
+$CMD "$@"

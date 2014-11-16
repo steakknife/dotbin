@@ -1,0 +1,195 @@
+#!/bin/sh 
+# usage: $0 /path/to/chroot
+set -e
+set -x
+
+exist_filter() {
+  while read -r file_name
+  do
+    test -e "$file_name" && echo $file_name
+  done
+}
+
+make_list() {
+  sudo dtruss env SHELL=/bin/sh chroot "${chroot_dir}" /bin/sh -c '' 2>&1 \
+     | grep '/' | sed 's%[^/]*\(/.*\)\\0.*%\1%g' \
+     | grep -v 'No such file or directory'  \
+     | grep -v '^/AppleInternal'  \
+     | grep -v '^/dev/'  \
+     | grep -v '^/usr/lib/dtrace' \
+     | grep -v '^/bin/[a-z]sh' \
+     | grep -v '^/Volumes' \
+     | grep -v '^/opt' \
+     | exist_filter \
+     | sudo tee "${chroot_dir}/file_list.txt" 
+
+  # /sbin
+  sed 's%.*%/sbin/&%' << system_binaries | sudo tee -a "${chroot_dir}/file_list.txt" 
+dmesg
+md5
+ping
+ping6
+system_binaries
+
+  # /usr/sbin
+  echo "/usr/sbin/chown"  | sudo tee -a "${chroot_dir}/file_list.txt" 
+  echo "/usr/sbin/chroot" | sudo tee -a "${chroot_dir}/file_list.txt" 
+
+find /usr/lib/system | sudo tee -a "${chroot_dir}/file_list.txt"
+echo "/usr/lib/libstdc++.6.dylib" | sudo tee -a "${chroot_dir}/file_list.txt"
+echo "/usr/lib/libc++abi.dylib" | sudo tee -a "${chroot_dir}/file_list.txt"
+echo "/usr/lib/libSystem.B.dylib" | sudo tee -a "${chroot_dir}/file_list.txt"
+
+  # /usr/bin
+  sed 's%.*%/usr/bin/&%' << binaries | sudo tee -a "${chroot_dir}/file_list.txt" 
+alias
+awk
+basename
+bc
+bg
+bunzip2
+bzcat
+bzegrep
+bzfgrep
+bzgrep
+bzip2
+bzless
+bzmore
+cd
+chgrp
+cksum
+clear
+col
+cpio
+cut
+diff
+dirname
+du
+egrep
+env
+false
+fg
+fgrep
+file
+find
+fuser
+getopt
+getopts
+gnutar
+grep
+groups
+gunzip
+gzcat
+gzip
+head
+id
+less
+logger
+mkfifo
+mktemp
+nano
+more
+script
+sed
+seq
+shar
+shasum
+sort
+srm
+stat
+strings
+su
+sum
+sudo
+tail
+tar
+tee
+time
+touch
+tput
+true
+tty
+type
+ulimit
+umask
+uname
+uncompress
+unexpand
+uniq
+unzip
+uptime
+users
+w
+which
+who
+whoami
+xargs
+yes
+zcat
+zcmp
+zdiff
+zegrep
+zfgrep
+zgrep
+zip
+zless
+zmore
+binaries
+
+  # every binary in /bin
+  find /bin/* -type f -exec file {} \; | grep '[^\)]:.*binary' | cut -d: -f1 | sudo tee -a "${chroot_dir}/file_list.txt"
+
+  sudo cat "${chroot_dir}/file_list.txt" | sort | uniq | sudo tee "${chroot_dir}/final_list.txt"
+  sudo \rm -f "${chroot_dir}/file_list.txt"
+}
+
+create_devices() {
+  cd "${chroot_dir}"
+  sudo mkdir -p dev
+  sudo mkdir -p dev/fd
+  sudo mknod dev/null    c  3  3
+  sudo mknod dev/zero    c  3  2
+  sudo mknod dev/random  c 11  0
+  sudo mknod dev/urandom c 11  1
+  sudo mknod dev/tty     c  2  0
+}
+
+copy_files() {
+  sudo rsync --archive \
+             --verbose \
+             --progress \
+             --copy-links \
+             --files-from="${chroot_dir}/final_list.txt" \
+             /               \
+             "${chroot_dir}" \
+
+}
+
+
+chroot_dir="$1"
+chroot_user="${2:-root}"
+chroot_group="${3:-wheel}"
+
+[ -z "$chroot_dir" ] && exit 1
+[ -d "${chroot_dir}" ] && exit 1
+sudo mkdir -p "${chroot_dir}"
+
+make_list
+copy_files
+create_devices
+
+while ! diff "${chroot_dir}/final_list.txt" "${chroot_dir}/old_final_list.txt" 
+do
+  sudo \cp -f "${chroot_dir}/final_list.txt" "${chroot_dir}/old_final_list.txt" 
+  make_list
+  copy_files
+done
+
+sudo mkdir -m 1777 "${chroot_dir}/tmp"
+sudo mkdir         "${chroot_dir}/var"
+sudo mkdir -m 1777 "${chroot_dir}/var/tmp"
+
+sudo \rm -f "${chroot_dir}/old_final_list.txt"
+
+[ -n "$chroot_user" ]  && sudo chown -R "$chroot_user"  "${chroot_dir}"
+[ -n "$chroot_group" ] && sudo chgrp -R "$chroot_group" "${chroot_dir}"

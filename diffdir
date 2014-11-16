@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+set -e
+set -m
+
+if ! which pkill >/dev/null 2>&1; then
+  echo 'Missing pkill' >&2
+  exit 1
+fi
+
+DIR1_OUTPUT="$(mktemp -t diffdir)"
+DIR2_OUTPUT="$(mktemp -t diffdir)"
+DIR_PIDS=""
+
+cleanup() {
+  rm -f "$DIR1_OUTPUT" "$DIR2_OUTPUT" || true
+  { echo $DIR_PIDS | tr " "  "\n" | xargs -L1 pkill -P ;} || true
+}
+
+output_filter() {
+if which diff-highlight >/dev/null 2>&1; then
+  if [ -t 1 ]; then
+    diff-highlight | less --color
+  else
+    cat
+  fi
+elif which colordiff >/dev/null 2>&1; then
+  if [ -t 1 ]; then
+    colordiff | less --color
+  else
+    cat
+  fi
+else
+  if [ -t 1 ]; then
+    less --color
+  else
+    cat
+  fi
+fi
+
+  
+}
+
+trap 'RESULT=$?; test -z "$CLEANUP" && cleanup; CLEANUP=1; exit $RESULT' EXIT INT QUIT TERM HUP PIPE ERR
+
+echo "Checking $1..." >&2
+dir "$1" > "$DIR1_OUTPUT" &
+DIR_PIDS="$!"
+
+echo "Checking $2..." >&2
+dir "$2" > "$DIR2_OUTPUT" &
+DIR_PIDS="$DIR_PIDS $!"
+
+#echo "pids $DIR_PIDS"
+wait $DIR_PIDS
+echo "Comparing..."
+if which diff-highlight >/dev/null 2>&1; then
+  diff -u "$DIR1_OUTPUT" "$DIR2_OUTPUT" | diff-highlight | less -R
+elif which colordiff >/dev/null 2>&1; then
+  diff -u "$DIR1_OUTPUT" "$DIR2_OUTPUT" | colordiff | less -R
+else
+  diff -u "$DIR1_OUTPUT" "$DIR2_OUTPUT" | less
+fi

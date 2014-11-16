@@ -1,0 +1,4 @@
+#!/bin/sh -e
+/usr/sbin/networksetup -listallnetworkservices 2>/dev/null | grep -v '\*' | while read -r NETWORK_SERVICE; do
+  echo "$NETWORK_SERVICE: $(/usr/sbin/networksetup -getdnsservers "$NETWORK_SERVICE" 2>/dev/null | grep -v 'There')"
+done
