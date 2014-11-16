@@ -9,9 +9,9 @@ BOMS="$(mktemp -t uninstall_pkg)"
 
 
 _rm() {
-  echo "rm '$@'"
+  echo "rm -f '$@'"
   if [ -z "$DRY_RUN" ]; then
-    sudo rm "$@"
+    sudo rm -f "$@"
   fi
 }
 
@@ -20,9 +20,9 @@ _rmdir() {
   if [ "$D" = . ]; then
     D="$PWD"
   fi
-  echo "rmdir '$D'"
+  echo "rmdir -p '$D'"
   if [ -z "$DRY_RUN" ]; then
-    sudo rmdir "$D"
+    sudo rmdir -p "$D"
   fi
 }
 
@@ -44,14 +44,14 @@ find "$RECEIPT_DIR" -type f -name "*$1*.bom" | while read -r BOM; do
     (
       cd "$INSTALL_PREFIX_PATH"
       lsbom -fls "$BOM" | while read -r FILENAME; do
-        _rm -f "$FILENAME"
+        _rm "$FILENAME"
       done
       lsbom -dls "$BOM" | while read -r DIR; do
         echo "DIR='$DIR'"
-        _rmdir -p "$DIR"
+        _rmdir "$DIR"
       done
     )
 
-    sudo _rm -f "$BOM" "$PLIST"
+    sudo _rm "$BOM" "$PLIST"
   fi
 done 

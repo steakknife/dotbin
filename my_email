@@ -1,0 +1,2 @@
+#!/bin/sh
+exec contacts -Hm -f '%e'
