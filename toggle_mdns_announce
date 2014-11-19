@@ -2,28 +2,114 @@
 set -e
 
 case "$(sw_vers -productVersion)" in
-10.[6-9]) # <= Mountain Lion 
+10.[6-9]*) # <= Mountain Lion 
   if defaults read /System/Library/LaunchDaemons/com.apple.mDNSResponder ProgramArguments | grep -q Multicast; then
     sudo /usr/libexec/PlistBuddy -c 'Delete :ProgramArguments:2' /System/Library/LaunchDaemons/com.apple.mDNSResponder.plist
     VISIBLE=1
   else
     sudo /usr/libexec/PlistBuddy -c 'Add :ProgramArguments: string -NoMulticastAdvertisements' /System/Library/LaunchDaemons/com.apple.mDNSResponder.plist
-    VISIBLE=0
+    unset VISIBLE
   fi
   sudo launchctl unload /System/Library/LaunchDaemons/com.apple.mDNSResponder.plist
   sudo launchctl load /System/Library/LaunchDaemons/com.apple.mDNSResponder.plist
   ;;
 
-10.10) # Yosemite only
-  if defaults read /System/Library/LaunchDaemons/com.apple.discoveryd ProgramArguments | grep -q no-multicast; then
-    sudo /usr/libexec/PlistBuddy -c 'Delete :ProgramArguments:9' /System/Library/LaunchDaemons/com.apple.discoveryd.plist
-    VISIBLE=1
-  else
-    sudo /usr/libexec/PlistBuddy -c 'Add :ProgramArguments: string --no-multicast' /System/Library/LaunchDaemons/com.apple.discoveryd.plist
-    VISIBLE=0
-  fi
-  sudo launchctl unload /System/Library/LaunchDaemons/com.apple.discoveryd.plist
-  sudo launchctl load /System/Library/LaunchDaemons/com.apple.discoveryd.plist
+
+10.10*) # Yosemite only
+#  if defaults read /System/Library/LaunchDaemons/com.apple.discoveryd ProgramArguments | grep -q no-multicast; then
+#    sudo /usr/libexec/PlistBuddy -c 'Delete :ProgramArguments:9' /System/Library/LaunchDaemons/com.apple.discoveryd.plist
+#    VISIBLE=1
+#  else
+#    sudo /usr/libexec/PlistBuddy -c 'Add :ProgramArguments: string --no-multicast' /System/Library/LaunchDaemons/com.apple.discoveryd.plist
+#    VISIBLE=0
+#  fi
+#  sudo launchctl unload /System/Library/LaunchDaemons/com.apple.discoveryd.plist
+#  sudo launchctl load /System/Library/LaunchDaemons/com.apple.discoveryd.plist
+#
+#
+  cat << 'BROKEN' >&2
+
+
+  The undocumented discoveryd --no-multicast argument breaks Wi-Fi:
+
+
+      https://discussions.apple.com/message/27090155#27090418
+
+  Using firewall workaround instead.
+
+BROKEN
+
+   if sudo pfctl -s info | grep -q '^Status: Enabled'; then
+     echo 'pf enabled'
+     PF_ENABLED=1
+   else
+     echo 'pf disabled'
+     unset PF_ENABLED
+   fi
+
+   if sudo pfctl -s rules | grep -q 'port = 5353$'; then
+     echo 'custom pf rules present'
+     PF_RULES_ACTIVE=1
+   else
+     echo 'custom pf rules missing'
+     unset PF_RULES_ACTIVE
+   fi
+
+   if [ -n "$PF_ENABLED" ] && [ -n "$PF_RULES_ACTIVE" ]; then
+     VISIBLE=1
+   else
+     unset VISIBLE
+   fi
+
+   PF_RULE='include "/etc/pf.conf.mdns-disable"'
+
+   if ! sudo grep -q "$PF_RULE" /etc/pf.conf; then
+     echo 'new installation'
+     # new installation
+
+sudo tee /etc/pf.conf.mdns-disable << 'PF_CONF_MDNS_DISABLE' >/dev/null
+# /etc/pf.conf.mdns-disable
+# block mulicast dns (bonjour/avahi/mdns)
+block quick inet proto {tcp,udp} from any to any port mdns
+block quick inet6 proto {tcp,udp} from any to any port mdns
+block quick inet from 224.0.0.251 to any
+block quick inet6 from FF02::FB to any
+block quick inet from any to 224.0.0.251 # these might be redundant
+block quick inet6 from any to FF02::FB   #
+PF_CONF_MDNS_DISABLE
+
+     if [ -z "$VISIBLE" ]; then
+       # make invisible
+       echo "$PF_RULE" | sudo tee -a /etc/pf.conf >/dev/null # add rules
+     else
+       # make visible
+       echo "# $PF_RULE" | sudo tee -a /etc/pf.conf >/dev/null # add disabled rules
+     fi
+
+   else # existing installation
+     echo 'existing installation'
+     set -x
+     if [ -z "$VISIBLE" ]; then
+       # make invisible
+       sudo sed -i '' "s%^#.*$PF_RULE%$PF_RULE%" /etc/pf.conf # enable rules
+     else
+       # make visible
+       sudo sed -i '' "s%^$PF_RULE%# $PF_RULE%" /etc/pf.conf # disable rules
+     fi
+   fi
+
+   if [ -z "$PF_ENABLED" ]; then
+     cat << 'NOTES' >&2
+
+     Firewall must be enabled for this hack to block Bonjour.
+
+        Systems Preferences > Security & Privacy > Firewall > Turn On Firewall
+
+NOTES
+     exit 1
+   fi
+ 
+   sudo pfctl -f /etc/pf.conf 2>/dev/null # reload tables
   ;;
 
 *)
@@ -31,7 +117,7 @@ case "$(sw_vers -productVersion)" in
   exit 1
 esac
 
-if [ "$VISIBLE" = 1 ]; then
+if [ -n "$VISIBLE" ]; then
   echo 'This computer is now VISIBLE to other computers (multicast dns (mdns) annoucements enabled)'
 else
   echo 'This computer is now INVISIBLE to other computers (multicast dns (mdns) annoucements disabled)'
