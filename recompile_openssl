@@ -1,4 +1,0 @@
-#!/bin/sh
-brew uninstall openssl
-export CONFIGURE_OPTS="$@"
-exec brew install https://gist.github.com/steakknife/8228264/raw/openssl.rb

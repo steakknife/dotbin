@@ -1,0 +1,45 @@
+#!/usr/bin/env ruby
+# vim:ft=ruby
+# set aliases in all known shells
+$:.unshift File.join(File.dirname(__FILE__), 'lib')
+require 'aliasrc'
+
+include Aliasrc
+
+# ls
+
+# -A all entries except . .. (always set for root)
+# -a and . and ..
+# -G auto-color (not needed if CLICOLORS is set)
+# -R recurive list
+
+# -S sort by size
+# -c sort by ctime (when file metadata was last modified)
+# -t sort by mtime (when file data was last modified)
+# -u sort by atime (when file was last accessed)
+# -U sort by file creation date
+# -r reverse
+# -d matched directories are listed but not searched
+
+# -l long printing
+#     -e show ACLs
+#     -O show file flags
+#     -g show only group, omit owner
+#     -n show numeric uids/gids instead of owner/group
+#     -h human-readable file sizes
+#     -@ show extended attribute keys and sizes
+# -F decorate each file with a symbol
+# -i show inodes
+
+# -G not needed
+
+
+shell_alias 'la', 'ls -laF@eOT' # all metadata
+shell_alias 'l',  'ls -lF'      # regular
+shell_alias 'll', 'ls -laF'     # -a 
+shell_alias 'lh', 'ls -laFhrS'  # largest files last
+shell_alias 'lo', 'ls -laFrU'   # first created last
+shell_alias 'lc', 'ls -laFrc'   # newest ctime last
+shell_alias 'lm', 'ls -laFrt'   # newest mtime last
+shell_alias 'lt', 'ls -laFru'   # newest atime last
+

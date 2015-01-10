@@ -1,0 +1,8 @@
+#!/bin/sh
+set -e
+T="$TMPDIR/gem_git.$$"
+trap 'RESULT=$?; rm -rf "$T"; exit $RESULT' INT TERM HUP PIPE QUIT ERR EXIT
+git clone "$@" "$T"
+cd "$T"
+gem build *.gemspec
+gem install *.gem

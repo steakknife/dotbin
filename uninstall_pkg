@@ -4,12 +4,11 @@ test -n "$DEBUG" && set -x
 
 RECEIPT_DIR='/var/db/receipts'
 
-trap 'RESULT=$?; rm -f "$BOMS"; exit $RESULT' EXIT ERR INT QUIT TERM PIPE HUP
-BOMS="$(mktemp -t uninstall_pkg)"
-
+trap 'RESULT=$?; rm -rf "$BOMS"; exit $RESULT' EXIT ERR INT QUIT TERM PIPE HUP
+BOMS="$(mktemp -d -t uninstall_pkg)"
 
 _rm() {
-  echo "rm -f '$@'"
+  echo "sudo rm -f '$@'"
   if [ -z "$DRY_RUN" ]; then
     sudo rm -f "$@"
   fi
@@ -17,12 +16,25 @@ _rm() {
 
 _rmdir() {
   D="$1"
-  if [ "$D" = . ]; then
+  if [ "$D" = . ]; then # confirm non-recursive delete
     D="$PWD"
-  fi
-  echo "rmdir -p '$D'"
-  if [ -z "$DRY_RUN" ]; then
-    sudo rmdir -p "$D"
+    echo "sudo rm -ir '$D'"
+    if [ -z "$DRY_RUN" ]; then
+      echo '*** Proceed with EXTREME CAUTION, Ctrl-C if unsure ***' >&2
+      echo >&2
+      unset ANS
+      read -p "Recursively delete '$D' ? [Yn] " -u 3 ANS
+      if [ "$ANS" = y ] || [ "$ANS" = Y ]; then
+        sudo rm -rf "$D"
+      else # no
+        echo "Skipping $D" >&2
+      fi
+    fi
+  else # non-recursive delete of dir D only
+    echo "sudo rm -df '$D'"
+    if [ -z "$DRY_RUN" ]; then
+      sudo rm -df "$D"
+    fi
   fi
 }
 
@@ -32,26 +44,30 @@ find "$RECEIPT_DIR" -type f -name "*$1*.bom" | while read -r BOM; do
   PLIST="$(echo "$BOM" | sed 's/\.bom$/.plist/')"
   INSTALL_PREFIX_PATH="/$(defaults read "$PLIST" InstallPrefixPath)"
 
+  lsbom -fls "$BOM" > "$BOMS/files"
+  lsbom -dls "$BOM" | sort -r > "$BOMS/dirs"
   echo
   echo "----- Start '$BOM'"
-  lsbom -fls "$BOM" | sed "s%^%file $INSTALL_PREFIX_PATH%g;s%\./%/%g"
-  lsbom -dls "$BOM" | sed "s%^% dir $INSTALL_PREFIX_PATH%g;s%\./%/%g"
+  sed "s%^%file $INSTALL_PREFIX_PATH%g;s%\./%/%g" < "$BOMS/files"
+  sed "s%^% dir $INSTALL_PREFIX_PATH%g;s%\./%/%g" < "$BOMS/dirs"
   echo "------ End '$BOM'"
   echo
   read -p "Uninstall using '$BOM' ? [Yn] " -u 3 ANS
 
   if [ "$ANS" = y ] || [ "$ANS" = Y ]; then
-    (
-      cd "$INSTALL_PREFIX_PATH"
-      lsbom -fls "$BOM" | while read -r FILENAME; do
-        _rm "$FILENAME"
-      done
-      lsbom -dls "$BOM" | while read -r DIR; do
-        echo "DIR='$DIR'"
-        _rmdir "$DIR"
-      done
-    )
-
-    sudo _rm "$BOM" "$PLIST"
+    if [ -d "$INSTALL_PREFIX_PATH" ]; then
+      (
+        cd "$INSTALL_PREFIX_PATH"
+        while read -r FILENAME; do
+          _rm "$FILENAME"
+        done < "$BOMS/files"
+        while read -r DIR; do
+          _rmdir "$DIR"
+        done < "$BOMS/dirs"
+      )
+    else
+      echo "Missing INSTALL_PREFIX_PATH=${INSTALL_PREFIX_PATH}" >&2
+    fi
+    _rm "$BOM" "$PLIST"
   fi
 done 

@@ -1,0 +1,28 @@
+#!/bin/sh
+set -e
+TEMP_DIR="$(mktemp -d -t XXXXXX)"
+trap 'RESULT=$?; rm -rf "$TEMP_DIR"; exit $RESULT' INT TERM QUIT HUP PIPE
+cd "$TEMP_DIR"
+touch crun.c
+CODE=''
+while [ -n "$1" ]; do 
+  case "$1" in
+-r*) echo "#include <$(echo $1 | sed 's/^-r//').h>" >> crun.c ;;
+*) CODE="$CODE$1" ;;
+  esac
+  shift
+done
+
+cat << MAIN >> crun.c
+#include <stdlib.h>
+#include <stdbool.h>
+int main(int argc, char **argv) {
+  bool result = true;
+  $CODE
+  return (result) ? EXIT_SUCCESS : EXIT_FAILURE;
+}
+
+MAIN
+
+clang -Wpedantic -Werror -Wall -std=c99 crun.c
+./a.out

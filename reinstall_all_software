@@ -1,0 +1,277 @@
+#!/usr/bin/ruby
+# other environment variables
+# DRY_RUN: dont do anything
+# DEBUG: show more info
+
+$:.unshift << File.join(File.dirname(__FILE__), 'lib')
+
+require 'which'
+require 'utils/platform'
+require 'packages/gems'
+require 'packages/pip'
+#require 'packages/npm'
+#require 'packages/go'
+
+# ---- config
+
+RUBY_INSTALL_VERSIONS = ['ruby 2.2.0', 'ruby 2.1.5', 'ruby 2.0.0-p598', 'ruby 1.9.3-p551']
+RUBIES_ROOT = ENV['RUBIES_ROOT']
+BREW_PACKAGES = {
+            libs: %w[bdw-gc gdbm google-perftools nettle libffi
+                     libsodium libyaml pcre readline sqlite swig xz],
+             dev: %w[ant autoconf automake cmake ctags doxygen
+                     libtool nasm pkg-config heroku-toolbelt],
+       reversing: %w[radare2],
+     web_testing: %w[casperjs phantomjs],
+    productivity: %w[contacts],
+           audio: %w[ffmpeg lame],
+        sysadmin: %w[colordiff coreutils pstree htop-osx watch bwm-ng],
+         editors: %w[vim],
+                }
+
+PERL5_DIR = File.join(ENV["HOME"], '.perl5')
+PERL5_ENV = {
+  PERL5_DIR: PERL5_DIR,
+  PERL_LOCAL_LIB_ROOT: ((ENV['PERL_LOCAL_LIB_ROOT'] || '').split(File::PATH_SEPARATOR) << PERL5_DIR).join(File::PATH_SEPARATOR),
+  PERL_MB_OPT: "--install_base '#{PERL5_DIR}'",
+  PERL_MM_OPT: "INSTALL_BASE='#{PERL5_DIR}'",
+  PATH: ENV['PATH'] + File::PATH_SEPARATOR + File.join(PERL5_DIR, 'bin')
+}
+
+FLAGS_REGEX = /\A-.*/
+
+module Homebrew
+  include Utils
+  extend self
+
+  def brew(*args)
+    sh 'brew', *args
+  end
+
+  def install_homebrew
+    puts 'Installing homebrew'
+    sh 'ruby', '-e', download('https://raw.githubusercontent.com/Homebrew/install/master/install')
+  end
+
+  def uninstall_homebrew
+    puts 'Uninstalling homebrew'
+    cleanup rescue nil
+    pre = prefix
+    rm_rf File.join(pre, '.git')
+    rm_rf File.join(pre, 'Cellar')
+  end
+
+  def prefix_of(pkg)
+    brew '--prefix', pkg
+  end
+
+  def prefix
+    brew '--prefix' rescue '/usr/local'
+  end
+
+  def cleanup
+    brew 'cleanup'
+  end
+
+  def doctor
+    brew 'update'
+  end
+
+  def update
+    brew 'doctor'
+  end
+
+  def get_ready
+    uninstall_homebrew if ENV['REINSTALL_HOMEBREW']
+    install_homebrew unless Which('brew') # no warts, thanks
+    update
+    doctor
+  end
+
+  def pkgs_flags(*args)
+    pkgs = args.reject { |x| x =~ FLAGS_REGEX } .map do |pkg|
+      if pkg.is_a? Symbol
+        BREW_PACKAGES.fetch pkg
+      else
+        pkg
+      end
+    end.flatten.uniq
+    flags = args.select {|x| x =~ FLAGS_REGEX }
+    [pkgs, flags]
+  end
+
+  def uninstall(*args)
+    pkgs, flags = pkgs_flags(*args)
+
+    pkgs.each do |pkg|
+      brew 'unlink', *flags, pkg
+      brew 'uninstall', '--force', *flags, pkg
+    end
+  end
+
+  def install(*args)
+    pkgs, flags = pkgs_flags(*args)
+
+    pkgs.each do |pkg|
+      brew 'install', *flags, pkg
+    end
+  end
+
+  def reinstall(*args)
+    pkgs, _ = pkgs_flags(*args)
+    uninstall(*pkgs)
+    install(*args)
+  end
+
+  def reinstall_url(pkg, url, *args)
+    uninstall(pkg)
+    _, *flags = pkgs_flags(*args)
+    install(url, *flags)
+  end
+
+  # gpg 1.x, cpan and monkeysphere
+  def reinstall_monkeysphere
+    reinstall 'gnupg', '--8192'
+
+    puts 'monkeysphere notes: MUST set environment variables'
+    PERL5_ENV.each do |var, value|
+      var = var.to_s
+      ENV[var] = value
+      if var == 'PATH'
+        puts '  - Add $HOME/.perl5 to PATH'
+      else
+        puts "  - export #{var}=\"#{value}\""
+      end
+    end
+    sh 'echo upgrade | cpan'
+    sh 'cpan -i Crypt::OpenSSL::Bignum Crypt::OpenSSL::RSA'
+
+    reinstall 'monkeysphere', 'https://raw.githubusercontent.com/steakknife/homebrew-plus/master/monkeysphere.rb'
+  end
+
+  def reinstall_openssl
+    ENV['CONFIGURE_OPTS'] = %w[no-hw no-rdrand no-sctp no-mdc2 no-fips
+                               no-zlib no-camellia no-seed no-idea
+                               no-exp no-srp no-psk].join ' '
+    reinstall_url 'openssl',
+      'brew install https://gist.githubusercontent.com/steakknife/8228264/raw/openssl.rb'
+    ENV.delete 'CONFIGURE_OPTS'
+  end
+
+  def reinstall_rubies(*rubies)
+    rm_rf ENV['RUBIES_ROOT']
+    rubies.map do |v|
+      sh 'ruby-install', 'ruby', v,
+        '-r', RUBIES_ROOT,
+        '--',
+        '--enable-shared',
+        '--disable-install-doc',
+        '--with-openssl-dir=/usr/local/opt/openssl'
+    end
+  end
+end
+
+# ---- sanity checks 
+
+Utils.require_mac
+Utils.require_env 'RUBIES_ROOT', :matches => /\/.+/
+
+# ------ start
+
+Homebrew.get_ready
+
+Homebrew.reinstall :dev
+Homebrew.reinstall 'valgrind', '--HEAD' # https://github.com/Homebrew/homebrew/issues/29988
+Homebrew.reinstall_url 'makeheaders',
+  'https://gist.githubusercontent.com/steakknife/5c85cce27059e3525a57/raw/makeheaders.rb'
+Homebrew.reinstall :libs
+Homebrew.reinstall :audio
+Homebrew.reinstall :sysadmin
+Homebrew.reinstall :reversing
+Homebrew.reinstall :productivity
+Homebrew.reinstall :editors
+
+Homebrew.reinstall_monkeysphere
+
+# gpg 2.x
+Homebrew.reinstall 'gnupg2',
+  '--8192',
+  '--without-libusb-compat',
+  '--without-dirmngr'
+
+Homebrew.reinstall_openssl
+
+Homebrew.reinstall_url 'openssh',
+  'https://raw.githubusercontent.com/Homebrew/homebrew-dupes/master/openssh.rb',
+  '--with-keychain-support',
+  '--with-ldns'
+
+# curl & libcurl
+Homebrew.reinstall 'curl',
+  '--with-rtmp',
+  '--with-ssh',
+  '--with-openssl',
+  '--with-libmetalink',
+  '--with-gssapi',
+  '--with-ares'
+
+Homebrew.reinstall_url 'rsync',
+  'https://raw.githubusercontent.com/Homebrew/homebrew-dupes/master/rsync.rb'
+
+Homebrew.reinstall_url 'wget',
+  'https://gist.githubusercontent.com/steakknife/5d7cc206b841d7e2aca0/raw/wget.rb',
+  '--with-iri',
+  '--with-pcre'
+
+# ---- dvcs
+
+Homebrew.reinstall 'ruby-install', '--HEAD' # to always get latest rubies
+Homebrew.reinstall 'chruby'#, '--HEAD' 
+Homebrew.reinstall_rubies(*RUBY_INSTALL_VERSIONS)
+Packages::Gems.reinstall_all
+Homebrew.reinstall 'git',
+  '--with-brewed-openssl',
+  '--with-brewed-curl',
+  '--with-persistent-https',
+  '--with-pcre',
+  '--with-blk-sha1'
+
+Homebrew.reinstall 'python'
+Packages::Pip.reinstall_all
+
+Homebrew.reinstall 'mercurial'
+Homebrew.reinstall 'subversion'
+
+
+# ---- languages
+
+# Homebrew.reinstall 'node', '--build-from-source' # <= 0.10.35 contains vulnerable OpenSSL 1.0.1j (needs 1.0.1k+)
+# Packages::Node.reinstall_all
+
+Homebrew.reinstall 'go'
+#Packages::Go.reinstall_all
+
+# ----  shells
+
+Homebrew.reinstall 'bash'
+Homebrew.reinstall 'zsh'
+Homebrew.reinstall :web_testing
+
+
+# ---- daemons
+
+Homebrew.reinstall 'dnscrypt-proxy'
+Homebrew.reinstall 'dnsmasq', '--with-dnssec', '--with-libidn'
+Homebrew.reinstall 'nginx', '--with-spdy', '--with-gunzip'
+Homebrew.reinstall 'redis'
+# postgres
+Homebrew.reinstall 'ossp-uuid', 'postgres', 'pg_top'
+# 0mq
+Homebrew.reinstall 'zmq', 'czmq'
+
+# ----- final cleanup
+
+Homebrew.cleanup
+
+puts 'Close this terminal for all settings to take effect.' unless Utils::DRY_RUN
+

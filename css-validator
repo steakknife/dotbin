@@ -1,0 +1,2 @@
+#!/bin/sh
+exec java -jar /usr/local/w3c/css-validator/css-validator.jar "$@"

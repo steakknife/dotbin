@@ -35,14 +35,23 @@ check_haml() {
 
 check_json() {
   echo "checking JSON $1"
+  ruby -rjson -e "
+  begin
+    JSON.load(File.expand_path('$1'))
+    puts 'JSON OK'
+  rescue
+    \$stderr.puts 'Failed parsing JSON file \"$1\"'
+    exit 1
+  end
+  "
   json_verify -uc < "$1"
 }
 
-# gem install yaml
 check_yaml() {
+  echo "checking YAML $1"
   ruby -ryaml -e "
   begin
-    YAML::parse(File.read(File.expand_path('$1')))
+    YAML::load(File.expand_path('$1'))
     puts \"YAML OK\"
   rescue Exception
     \$stderr.puts\"Failed parsing YAML file $1\"

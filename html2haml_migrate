@@ -1,0 +1,6 @@
+#!/bin/sh
+set -e
+IN="$1"
+OUT="$(echo "$1" | sed 's/\.html\.erb$/.html.haml/')"
+html2haml -e "$IN" > "$OUT"
+rm -f "$IN"

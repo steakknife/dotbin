@@ -1,0 +1,52 @@
+---
+# build tools 
+- yo
+- yeoman-generator
+- bower
+- gulp
+
+# front-end JS compiler
+- browserify
+
+# lint
+- coffeelint
+
+# testing
+- jasmine-core
+
+# db
+- sequelize # http://sequelizejs.com/
+- pg
+# - mysql
+# - sqlite3
+# - mariasql # mariadb
+
+# parsers
+# # JSON # just var x = require('filename')
+# - libxmljs
+# - node_xslt
+# - zmq # http://zeromq.org/bindings:node-js
+
+# nosql
+# - mongodb  # http://docs.mongodb.org/ecosystem/drivers/node-js/
+# - mongoose # mongodb ODM
+# - redis # http://redis.io/clients
+# - zukai # riak ODM http://docs.basho.com/riak/latest/dev/using/libraries/
+
+# JS libraries
+- underscore
+
+# web frameworks 
+- express
+
+# cloud-based utilities
+- localtunnel
+
+# templating languages
+- mustache
+
+# JS languages
+- coffee-script
+
+# JS frameworks
+- angular

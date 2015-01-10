@@ -1,2 +1,6 @@
 #!/bin/sh
-echo doit | nc -G1 -w1 -A4 -tn 127.0.0.1 17777 
+if [ -n "$DEBUG" ]; then
+  set -x
+  NC_OPTS+=' -v'
+fi
+echo doit | nc $NC_OPTS -G1 -w1 -A4 -tn 0.0.0.0 17777 

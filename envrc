@@ -1,0 +1,84 @@
+#!/usr/bin/env ruby
+# automatically add all of my software and configure shell(s)
+dir = File.join(File.dirname(__FILE__), 'lib'); $:.unshift dir unless $:.include? dir
+
+require 'find'
+require 'utils/platform' # mac?, etc.
+require 'shell'
+
+include Find
+include Shell
+include Utils
+
+reset_manpath
+
+# local user scripts
+add_path? '~/sbin'
+add_path? '~/bin'
+
+# ensure /usr/local/bin and /usr/local/sbin are in the path
+%w[/usr/local/bin /usr/local/sbin].each do |d|
+  send((mac?) ? :prepend_path : :add_path, d)
+end
+
+add_manpath '/usr/local/man'
+
+# ls
+setenv 'CLICOLOR', 1 # smart ls -G always
+setenv 'LSCOLORS', 'GxFxCxDxBxegedabagaced'
+if zsh?
+#  setenv 'LS_COLORS', 'TODO'
+end
+
+# user-configured perl5 updates
+if PERL5_DIR = add_path?('$HOME/perl5')
+  setenv 'PERL5_DIR', PERL5_DIR
+  append_dir_to_env 'PERL_LOCAL_LIB_ROOT', '${PERL5_DIR}'
+  setenv 'PERL_MB_OPT', '--install_base "${PERL5_DIR}"'
+  setenv 'INSTALL_BASE', '"${PERL5_DIR}"'
+  append_dir_to_env 'PERL5LIB', '$PERL5_DIR/lib/perl5'
+end
+
+# go 
+add_path? '/usr/local/go/bin'
+setenv_expanded 'GOPATH', '$HOME/.go'
+add_path? '$GOPATH/bin'
+
+# chruby
+if Which('chruby-exec')
+  setenv 'RUBIES_ROOT', '/usr/local/ruby'
+  if bash? || zsh?
+    setenv 'RUBIES', Dir[File.join(ENV['RUBIES_ROOT'], '*')] # bash and zsh only
+  else
+    $stderr.puts 'envrc: chruby requires bash or zsh'
+  end
+end
+
+# node
+if Which('node')
+  setenv_expanded 'NPM_CONFIG_PREFIX', '$HOME/.node'
+  add_path? '$HOME/.node/bin'
+  add_manpath '/usr/local/lib/node_modules/npm/man'
+  dirs(File.join(expand_shell_string('$NPM_CONFIG_PREFIX/lib/node_modules'), %w[** man])).each do |man_dir|
+    add_manpath man_dir
+  end
+end
+
+# haskell
+if Which('cabal')
+  prepend_path? '$HOME/Library/Haskell/bin'
+end
+
+# git
+if Which('git')
+  if mac? && Which('contacts')
+    myself = `contacts -mH -f '%n:%e'`.split(':').map(&:strip)
+    setenv 'GIT_AUTHOR_EMAIL', myself[1]
+    setenv 'GIT_AUTHOR_NAME', myself[0]
+    setenv 'GIT_COMMITTER_EMAIL', myself[1]
+    setenv 'GIT_COMMITTER_NAME', myself[0]
+  end
+end # git
+
+# sourceable output -> stdout
+puts Shell()

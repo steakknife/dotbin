@@ -1,0 +1,180 @@
+# .default-gems
+# jruby alternatives: https://github.com/jruby/jruby/wiki/C-Extension-Alternatives
+---
+# gem plugins
+- gem-man
+
+# essentials
+- bundler
+- ruby-graphviz # for bundle viz
+- rake
+- hoe
+- ronn
+- sdoc 
+- yard
+- netrc
+
+### debugging
+## pry
+- pry
+- pry-awesome_print
+- pry-jist
+- pry-rescue
+- pry-stack_explorer
+- pry-nav: windows || rbx || jruby
+- pry-debugger: "!windows && !rbx && !jruby && 1.9"
+- pry-byebug: "!windows && !rbx && !jruby && 2.0"
+- pry-byebug: "!windows && !rbx && !jruby && 2.1"
+
+### desktop utilities
+- ruby-growl
+
+### terminal utilities
+## color
+- ansible: "!windows"
+- win32console: windows
+
+### general utilities
+## process supervision
+- foreman
+- god: "!windows && !jruby"
+- foreman_god: "!windows && !jruby"
+
+## ruby security
+- waxseal
+- scrypt
+
+## file change monitoring
+- rb-inotify: linux
+- rb-fsevent: osx
+- rb-kqueue: freebsd or openbsd or netbsd
+- wdm: windows
+
+### web frameworks
+- rails
+- padrino
+- rails_apps_composer
+
+### web framework security
+- brakeman # rails audit
+
+### metrics
+- metric_fu
+- rubocop
+
+### web assets
+- coffee-script
+- haml
+- html2haml
+- mustache
+- compass 
+- sass
+
+### linters
+# coffee lint via node
+- scss-lint
+- haml-lint
+
+### web dev services
+- dfeojm
+## ruby gems
+- fury
+## github
+- github_downloads
+- github_cli
+- hub
+- jist
+
+### rack servers
+# raptor-whatever
+#- reel-rack
+- puma
+#- trinidad: jruby
+#- thin: "!jruby"
+#- unicorn: "!windows and !jruby"
+
+### api servers
+- webmachine
+- reel
+- goliath
+
+### codecs
+## JSON
+- multi_json
+- json: "!jruby"
+- oj: "!jruby"
+
+## XML
+- multi_xml
+#- nokogiri: "!jruby" # NOKOGIRI_USE_SYSTEM_LIBRARIES=1 gem install nokogiri
+- ox: "!jruby"
+
+### misc
+- io_splice: "linux and !jruby"
+- absolute_time: "!jruby" # Benchmark compatible timing
+
+### network I/O libraries
+
+## ZeroMQ 0MQ ZMQ
+- ffi-rzmq
+
+### image processing
+#- rmagick: "!jruby"
+#- image_voodoo: jruby
+
+### JavaScript engine
+- therubyracer: "!jruby"
+- therubyrhino: jruby
+
+## Windows-specific
+- jruby-win32ole: windows and jruby
+
+### JRuby-specific 
+- jruby-launcher: jruby    # speed up jruby
+- warbler: jruby           # build jruby projects as WAR files
+
+### cron jobs
+## clockwork
+- clockwork
+- jruby-rack-mainspring: jruby # clockwork in main app for jruby
+
+### databases
+## postgresql
+- pg: "!jruby"
+- activerecord-jdbcpostgresql-adapter: jruby
+
+## mysql
+#- mysql2: "!jruby"
+#- activerecord-jdbcmysql-adapter: jruby
+
+## sqlite
+#- sqlite: "!jruby"
+#- activerecord-jdbcsqlite3-adapter: jruby
+
+## ibm db2
+#- ibm_db: "!jruby"
+#- activerecord-jdbc-adapter: jruby # base gem for use with ibm db2 jdbc jar
+
+## ms sql
+#- activerecord-jdbcmssql-adapter: jruby
+
+## other
+#- activerecord-jdbcderby-adapter: jruby
+#- activerecord-jdbchsqldb-adapter: jruby
+#- activerecord-jdbch2-adapter: jruby
+
+
+### NoSQLs
+## redis
+- redis
+
+## mongo
+#- mongoid
+#- bson_ext: "!jruby"
+
+## memcached
+#- dalli
+## alternative drivers
+#- memcached: "!jruby"
+#- jruby-memcached: jruby
+

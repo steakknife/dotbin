@@ -1,0 +1,28 @@
+#!/bin/sh
+
+if [ -z "$CXX"]; then
+  if which xlc++ >/dev/null 2>&1; then
+    CXX="$(which xlc++)"
+  elif which icpc >/dev/null 2>&1; then
+    CXX="$(which icpc)"
+  elif which aCC >/dev/null 2>&1; then
+    CXX="$(which aCC)"
+  elif which clang++ >/dev/null 2>&1; then
+    CXX="$(which clang++)"
+  elif which g++ >/dev/null 2>&1; then
+    CXX="$(which g++)"
+  elif which CC >/dev/null 2>&1; then
+    CXX="$(which CC)"
+  elif which c++ >/dev/null 2>&1; then
+    CXX="$(which c++)"
+  else
+    echo "Could not locate C++ compiler" >&2
+    exit 1
+  fi
+fi
+
+case "$CXX" in 
+*xlc*) exec "${CXX}" -qshowmacros -E /dev/null ;;
+esac
+exec "${CXX}" -dM -E -x c++ /dev/null
+

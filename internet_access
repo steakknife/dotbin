@@ -1,40 +1,191 @@
-#!/bin/sh
-# brew install curl --with-rtmp --with-ssh --with-openssl --with-libmetalink --with-gssapi --with-ares
-set -e
-if [ "$1" = '-d' ]; then
-  set -x
-  OPTIONS=""
-else
-  OPTIONS="-s"
-fi
-if [ -e /Users/bmf/.force_dnscrypt_on ] && [ ! -e /Users/bmf/.force_dnscrypt_off ]; then
-  exit 0
-fi
+#!/usr/bin/env ruby
+#
+# internet_access
+# 
+# do we have interenet access?
+#
+# set env DEBUG to turn on $DEBUG and see debug statements
 
-WEBSITE="${WEBSITE-www.thinkdifferent.us}"
-DNS_SERVER="${DNS_SERVER-8.8.8.8}"
+require 'net/http'
+require 'resolv'
+require 'timeout'
+require 'uri'
 
-dns_only() {
-  RECORDS="$(dig @$DNS_SERVER +noquestion +noadditional +noauthority +time=2 +tries=2 $WEBSITE any 2>/dev/null | sed '/^;/d;/^$/d' | grep -c .)"
-  [[ "$RECORDS" -gt 0 ]]
-}
+# touch ~/.force_no_internet_access to force false
+# touch ~/.force_internet_access to force true
+module InternetAccess
+  HOME_DIR = ENV['HOME'] || ENV['HOME_DIR'] || `echo ~`.chop
 
-web() {
-  STRING="${STRING-<HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Success</BODY></HTML>}"
-  if dns_only; then
-    /usr/local/opt/curl/bin/curl \
-      --ipv4 \
-      --user-agent "Mozilla/5.0 (compatible; MSIE 10.0; Windows NT 6.1; Trident/6.0)" \
-      $OPTIONS \
-      --location \
-      --retry 2 \
-      --dns-servers $DNS_SERVER \
-      --retry-max-time 3 \
-      --max-time 12 \
-      $WEBSITE | dd bs=512 count=1 2>/dev/null | grep -q "$STRING"
-  else
-    return 1
-  fi
-}
+  DNS_TIMEOUT = 2 # seconds
+  DNS_RETRIES = 2 # times
+  DNS_SERVERS = (ENV['DNS_SERVERS'] || '8.8.8.8').split # or space-seperated array
 
-web
+  REACHABLE_WEBSITE = URI(ENV['REACHABLE_WEBSITE'] || 'http://www.thinkdifferent.us')
+  REACHABLE_CONTENT = ENV['REACHABLE_CONTENT'] || '<HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Success</BODY></HTML>'
+  REACHABLE_RETRIES = 2 # tries
+  REACHABLE_TIMEOUT = 1 # seconds
+  REACHABLE_MAXIMUM_REDIRECTS = 5
+  MAXIMUM_TIME = 12 # seconds
+  USER_AGENT = ENV['USER_AGENT'] || 'Mozilla/5.0 (compatible; MSIE 10.0; Windows NT 6.1; Trident/6.0)'
+
+  extend self # avoid def self.fn everywhere
+
+  def debug(*args)
+    $stderr.puts(*args) if $DEBUG
+  end
+
+  def dns_reachable?
+    if (f = forced) != nil
+      return f
+    end
+    result = nil
+    t = Thread.new do
+      Thread.current.abort_on_exception = true
+      result = _dns_reachable?
+    end
+    begin
+      Timeout.timeout(DNS_TIMEOUT) do
+        t.join
+      end
+      result
+    rescue
+      t.kill if t.alive?
+      debug 'dns_reachable: giving up'
+      return false
+    end
+  end
+
+  def website_reachable?(ip = nil)
+    if (f = forced) != nil
+      return f
+    end
+
+    result = nil
+    t = Thread.new do
+      Thread.current.abort_on_exception = true
+      result = _website_reachable?(ip)
+    end
+    begin
+      Timeout.timeout(MAXIMUM_TIME) do
+        t.join 
+      end
+      result
+    rescue
+      t.kill if t.alive?
+      debug 'website_reachable: giving up'
+      false
+    end
+  end
+
+  def force_disabled?
+    d = File.exist?(File.join(HOME_DIR, '.force_no_internet_access'))
+    debug "force disabled = #{d}"
+    d 
+  end
+
+  def force_enabled?
+    e = File.exist?(File.join(HOME_DIR, '.force_internet_access'))
+    debug "force enabled = #{e}"
+    e
+  end
+
+  def forced
+    return true if force_enabled?
+    return false if force_disabled?
+  end
+
+  def internet_reachable?
+    if ip = dns_reachable?
+      website_reachable? ip # to test broken system resolvers
+    end
+  end
+
+  def main
+    internet_reachable?
+  end
+
+private
+  def _dns_reachable?
+    debug 'dns_reachable'
+    dns_resolvers = Resolv::DNS.new(resolvers:DNS_SERVERS)
+    dns_resolvers.timeouts = DNS_TIMEOUT
+    resolvers = Resolv.new(resolvers=[dns_resolvers])
+    retries = DNS_RETRIES
+    begin
+      debug 'getaddress'
+      result = resolvers.getaddress(REACHABLE_WEBSITE.host) 
+      debug "getaddress = #{result}"
+      raise 'failed' unless result =~ /./
+      debug 'dns_reachable: success'
+      result
+    rescue Resolv::ResolvError => e
+      debug e
+      if (retries -= 1) > 0
+        debug 'retry'
+        retry 
+      end
+      debug 'giving up'
+      raise
+    end
+  end
+
+  def _website_reachable?(ip = nil)
+    uri = REACHABLE_WEBSITE
+    retries = REACHABLE_RETRIES
+    redirects = REACHABLE_MAXIMUM_REDIRECTS
+
+    begin
+      host, port = (ip || uri.host), uri.port
+      debug "internet_reachable new http #{uri} (host=#{host}, port=#{port})"
+      http = Net::HTTP.new(host, port)
+
+      http.set_debug_output($stderr) if $DEBUG
+      http.use_ssl = uri.scheme == 'https'
+      http.continue_timeout = REACHABLE_TIMEOUT
+      http.open_timeout = REACHABLE_TIMEOUT
+      http.read_timeout = REACHABLE_TIMEOUT
+      http.ssl_timeout = REACHABLE_TIMEOUT
+      http.close_on_empty_response = true
+
+      debug "new request GET #{uri}"
+      request = Net::HTTP::Get.new(uri, 'User-Agent' => USER_AGENT) 
+
+      begin
+        debug "trying to GET #{uri}"
+        resp = nil
+        http.request(request) do |response|
+          debug 'saving response'
+          resp = response
+          debug 'getting body'
+          index = (response.body || '').index(REACHABLE_CONTENT)
+          if index
+            debug 'website_reachable: success'
+          else
+            debug 'website_reachable: failure'
+          end
+          index
+        end
+      end
+    rescue Net::HTTPMovedTemporarily, Net::HTTPMovedPermanently
+      debug 'redirect'
+      uri = URI(resp['location'])
+      retry if (redirects -= 1) > 0
+      raise
+    rescue => e
+      debug "rescue => #{e}"
+      retry if (retries -= 1) > 0
+      debug "giving up"
+      raise
+    end
+  end
+end
+
+if $0 == __FILE__
+  $DEBUG ||= !!ENV['DEBUG']
+  begin
+    raise unless InternetAccess.main
+  rescue Exception
+    exit 1
+  end
+end
+

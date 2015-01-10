@@ -1,0 +1,56 @@
+---
+### standard utilities
+- golang.org/x/tools/cmd/vet
+- golang.org/x/tools/cmd/godoc
+
+### standard libraries
+- code.google.com/p/go.crypto
+- code.google.com/p/go.image
+- code.google.com/p/go.net
+- code.google.com/p/go.text
+- code.google.com/p/go.tools
+- github.com/golang/lint/golint
+
+### other libraries
+- github.com/bradfitz/iter
+
+### dependencies
+- github.com/kr/godep
+
+### 3rd-party libraries
+- github.com/droundy/goopt # argument processing
+- github.com/steakknife/memlimit # RAM capacity detection
+
+### nosql
+## redis
+- github.com/garyburd/redigo/redis
+
+## sql
+- bitbucket.org/liamstask/goose # migrations
+- github.com/lib/pq # postgres driver
+- github.com/coopernurse/gorp # ORM
+
+### other stores
+## zk
+- launchpad.net/gozk/zookeeper # gozk
+- github.com/jigish/gozk-recipes
+
+### security
+## hash fns
+- github.com/steakknife/keccak
+- github.com/steakknife/echo
+- github.com/steakknife/sha3sum # sha3sum cli 
+## ciphers
+- github.com/steakknife/rsapss
+## pbkdfs
+- github.com/steakknife/scrypt
+## other
+- github.com/steakknife/securecompare # constant-time comparison
+
+## codecs
+## TOML
+- github.com/BurntSushi/toml
+## YAML
+- gopkg.in/yaml.v1
+## Msgpack and binc
+- github.com/ugorji/go/codec

@@ -1,0 +1,121 @@
+---
+# python packages installed in order which they appear
+
+# scm
+#- mercurial: "!python3 && !system_python3" # brew install mercurial
+
+# security  
+- gnupg
+
+# utilities
+- wsgiref: "!python3 && !system_python3"
+- appscript: "osx"
+- pyreadline
+- Fabric   # deployment
+  # gevent - coroutines (brew install libev) 
+- http://www.cosc.canterbury.ac.nz/greg.ewing/python/Pyrex/Pyrex-0.9.9.tar.gz: "!python3 && !system_python3" # for cython on python2
+- Cython   # c++ python api (required by gevent)
+- gevent: "!python3 && !system_python3"
+- https://github.com/fantix/gevent/archive/master.tar.gz: "python3 || system_python3"
+  # gevent
+- gunicorn # wsgi server
+- virtualenv
+- tox
+- supervisor: "!python3 && !system_python3"
+- https://github.com/Supervisor/supervisor/archive/master.tar.gz: "python3 || system_python3"
+
+# serialization codecs
+- simplejson
+- PyYAML
+- toml
+- beautifulsoup4 # html/xml
+- lxml
+
+# building
+# SCons # brew install scons
+
+# web microframework
+- Flask
+
+# web macroframework
+- Django
+# admin tools plugins 
+# - django-grappelli # admin site theme
+# - django-admin-timeline # facebook like timeline for admins
+# - django-admin-honeypot # fake admin site
+# - django-airbrake # airbrake logger (or errbit)
+# - abalt-django-ajax # ajax for django
+# - django-allauth # devise for django
+# - django-polymorphic # polymorphic inherited models
+# - django-notification # user notification framework
+# - django-zurb-foundation
+# - foundationform
+# - django-crispy-forms # bootstrap
+# - django-bower # bower assets https://django-bower.readthedocs.org/en/latest/
+
+# CMS
+#- Mezzanine # django CMS
+# plone # Zope CMS
+#- z3c.zcmlhook==1.0b1: "!python3 && !system_python3"
+#- z3c.caching==1.0b1: "!python3 && !system_python3"
+#- plone: "!python3 && !system_python3" # https://blueprints.launchpad.net/zodb/+spec/python3
+
+# scientific
+- ipython
+- numpy
+- scipy # optionally requires gfortran: brew install gcc (was gfortran)
+- cairocffi # for matplotlib, brew install cairo
+- matplotlib: "!python3 && !system_python3" # brew install freetype
+- https://github.com/matplotlib/matplotlib/archive/master.tar.gz: "python3 || system_python3"
+- pandas
+
+# packaging
+- cx_Freeze
+
+# image library
+- Pillow # PIL fork
+## broken
+#- http://cairographics.org/releases/py2cairo-1.10.0.tar.bz2: "python2" # doesnt work with system_python2
+#- http://cairographics.org/releases/pycairo-1.10.0.tar.bz2: "python3 || system_python3"
+## broken
+
+# testing
+- nose
+
+# documentation
+- Sphinx
+
+# code hygeine
+- pep8
+- pep257
+- pyflakes
+- mccabe
+- pylint
+- pylama
+
+# migrations
+- South
+
+# sql databases
+- psycopg2 # postgres
+# - mysql-connector-python
+# - Pysqlite
+# - cx_Oracle
+# - django-mssql # microsoft sql
+# - ibm_db
+
+# nosqls
+- redis
+- pymongo
+- mongo # Minimalistic pymongo object wrapper
+#- cassandra-driver # brew install libev
+#- kairos # column-oriented ORM based on redis, mongo, cassandra, or SQL
+#- torus: "!python3 && !system_python3" # graphite server based on kairos (thrift package doesnt support py3k)
+
+# queues
+- pyzmq
+- amqplib
+
+# other nonrel stores
+#- pykeeper # ZK
+

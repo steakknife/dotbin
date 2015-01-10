@@ -1,0 +1,28 @@
+#!/bin/sh
+
+if [ -z "$CC" ]; then
+  if which xlc >/dev/null 2>&1; then
+    CC="$(which xlc)"
+  elif which pgcc >/dev/null 2>&1; then
+    CC="$(which pgcc)"
+  elif which icc >/dev/null 2>&1; then
+    CC="$(which icc)"
+  elif which clang >/dev/null 2>&1; then
+    CC="$(which clang)"
+  elif which gcc >/dev/null 2>&1; then
+    CC="$(which gcc)"
+  elif which cc >/dev/null 2>&1; then
+    CC="$(which cc)"
+  else
+    echo "Could not locate C compiler" >&2
+    exit 1
+  fi
+fi
+
+case "$CC" in 
+*pgcc*) exec "${CC}" -dM -E "$@" ;;
+*xlc*) exec "${CC}" -qshowmacros -E "$@" /dev/null ;;
+esac
+
+exec "${CC}" -dM -E -x c "$@" /dev/null
+

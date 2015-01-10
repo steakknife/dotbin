@@ -1,0 +1,6 @@
+#!/bin/sh
+set -e
+while [ -n "$1" ]; do
+  echo "$1: $(strings "$1" | grep -o 'Darwin Kernel Version [0-9.]*' | sed 's/Darwin Kernel Version //')"
+  shift
+done

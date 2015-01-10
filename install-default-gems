@@ -7,7 +7,7 @@ require 'yaml'
 HOME = ENV['HOME'] || ENV['HOMEDIR']
 DEBUG = ENV['DRY_RUN']
 
-FILES = ['/etc/default-gems.yaml', '/usr/local/etc/default-gems.yaml', File.join(HOME, '.default-gems.yaml')]
+FILES = ['/etc/gems.yaml', '/usr/local/etc/gems.yaml', File.join(HOME, 'bin', 'etc', 'gems.yaml')]
 GEM_INSTALL = ['gem', 'install']
 
 ALL_ENGINES = 'jruby rubinius mri'

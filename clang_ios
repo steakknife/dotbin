@@ -1,0 +1,8 @@
+#!/bin/sh
+set -e
+ARCHS="${ARCHS-armv7 armv7s arm64}"
+ARGS="${ARGS--mios-version-min=5.0}"
+for A in $ARCHS; do
+  ARGS="$ARGS -arch $A"
+done
+exec clang -isysroot "$(xcode-select -p)/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk" $ARGS "$@"

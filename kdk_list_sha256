@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+set -e
+#set -x
+
+sha256() {
+  openssl sha -sha256 "$@" | grep -o '[[:xdigit:]]*$'
+}
+
+extract_xnu_version_from_kernel() {
+  strings "$@" | grep -o 'xnu-[0-9][0-9.]*' | sort -u | sed 's/xnu-//'
+}
+
+process_kernel() {
+  OSX="$(echo "$2" | sed 's/kernel_debug_kit_//;s/_.*//')"
+  BUILD="$(echo "$2" | sed 's/.*_//;s/\.dmg//')"
+  XNU="$(extract_xnu_version_from_kernel "$1")"
+  SIZE="$(wc -c < "$1" | sed 's/[[:space:]]//g')"
+  HASH="$(sha256 "$1")"
+  FNAME="$3"
+
+  printf '%-8s %-7s %-11s %-11s %s %s' "$OSX" "$BUILD" "$XNU" "$SIZE" "$HASH" "$FNAME"
+  echo
+  mkdir -p ~/.osx_kernels
+  cp "$1" ~/.osx_kernels/"${OSX}_${BUILD}_${XNU}_${SIZE}_${HASH}"
+}
+
+N=0
+for DMG in '/Volumes/Storage/Mac/Development/Xcode/Kernel Debug Kit'/*.dmg; do
+  MNTPT="$TMPDIR/kdk_list_sha256.$N.$$"
+  STRIPPED_DMG="$TMPDIR/kdk_list_sha256.dmg.$N.$$"
+  mkdir -p "$MNTPT"
+  hdiutil convert -format UDTO "$DMG" -o "$STRIPPED_DMG"
+  hdiutil attach -nobrowse -readonly -mountpoint "$MNTPT" "$STRIPPED_DMG.cdr"
+  D="$(basename "$DMG")"
+  if [ -e "$MNTPT/mach_kernel" ]; then
+    process_kernel "$MNTPT/mach_kernel" "$D" '/mach_kernel'
+  elif [ -e "$MNTPT"/*.pkg ]; then
+    TARGET="$TMPDIR/kdk_list_sha256.$N.$$.tgt"
+    for PKG in "$MNTPT"/*.pkg; do
+      pkgutil --expand "$PKG" "$TARGET"
+      for PKG2 in "$TARGET"/*.pkg; do
+        mkdir "$TARGET/kdk"
+        (cd "$TARGET/kdk" && gunzip < "$PKG2/Payload" | cpio -id >/dev/null 2>&1)
+        process_kernel "$TARGET/kdk/System/Library/Kernels/kernel" "$D" '/System/Library/Kernels/kernel'
+        rm -rf "$TARGET/kdk"
+      done
+    done
+    rm -rf "$TARGET"
+  else
+    echo "$D: Missing mach_kernel and .pkg" >&2
+  fi
+  hdiutil detach -force -quiet "$MNTPT"
+  rmdir "$MNTPT"
+  rm -f "$STRIPPED_DMG"
+
+  N=$((N+1))
+done
