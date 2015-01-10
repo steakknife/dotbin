@@ -1,4 +1,6 @@
 #!/bin/sh
+exit 1
+############## UNMAINTAINED, DONT USE
 #
 # If you want to disable auto-imported functions, uncomment the following
 # ADD_IMPORT_FUNCTIONS_PATCH=YES install-bash-fix

@@ -1,6 +1,9 @@
 #!/bin/sh
 
-KEY=ca8c4f51e5bec809
+if [ -z "$KEY" ]; then
+  echo "Must set wunderground API key using env var KEY" >&2
+  exit 1
+fi
 
 
 case "$1" in

@@ -1,5 +1,5 @@
 #!/bin/sh
-curl --include \
+exec curl --include \
     --no-buffer \
     -H "Connection: Upgrade" \
     -H "Upgrade: websocket" \
